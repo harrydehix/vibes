@@ -227,6 +227,12 @@ function parseSongFile(content: string, folder: string, index: number, fixOffset
       })
     }
   }
+
+  if (currentLine.syllables && currentLine.syllables.length > 0) {
+    currentLine.endTimeMs = currentLine.syllables[currentLine.syllables.length - 1].endTimeMs
+    result.lines[currentPlayerForLine]!.push(currentLine as Line)
+  }
+
   return result
 }
 

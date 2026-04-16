@@ -1,6 +1,6 @@
 {
   "name": "vibes",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "karaoke app for personal use",
   "main": "./out/main/index.js",
   "author": "harrydehix",
