@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, protocol, screen } from 'electron'
+import { app, shell, BrowserWindow, protocol, screen, dialog } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
@@ -70,6 +70,39 @@ async function init() {
   dialogManager.defineIpcHandles()
   await downloaderManager.defineIpcHandles()
   createWindow()
+
+  // Erlaubt das Testen des Updaters aus der Entwicklungsumgebung heraus
+  if (is.dev) {
+    autoUpdater.forceDevUpdateConfig = true
+  }
+
+  // Deaktiviere Web-Installer & Blockmaps (für Voll-Downloads statt Delta-Updates)
+  autoUpdater.disableWebInstaller = true
+
+  autoUpdater.on('download-progress', (progress) => {
+    // Sende Fortschrittsinformationen an den Renderer
+    BrowserWindow.getAllWindows().forEach((window) => {
+      console.log(`Download progress: ${progress.percent}%`)
+    })
+  })
+
+  // Listener für erfolgreichen Download
+  autoUpdater.on('update-downloaded', (info) => {
+    dialog
+      .showMessageBox({
+        type: 'info',
+        title: 'Update downloaded',
+        message: `Version ${info.version} has been downloaded. Restart the application to apply the updates?`,
+        buttons: ['Install now', 'Later on exit']
+      })
+      .then((result) => {
+        if (result.response === 0) {
+          // Erstes Element: Index 0 ('Install now')
+          autoUpdater.quitAndInstall(false, true)
+        }
+      })
+  })
+
   autoUpdater.checkForUpdatesAndNotify()
 }
 
