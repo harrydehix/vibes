@@ -1,4 +1,4 @@
-import { exec } from 'child_process'
+import { execFile } from 'child_process'
 import { app, BrowserWindow } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
@@ -60,7 +60,7 @@ class YtDlpManager {
   private async _isYtDlpInstalled(): Promise<boolean> {
     try {
       await new Promise((resolve, reject) => {
-        exec('yt-dlp --version', (error) => {
+        execFile('yt-dlp', ['--version'], (error) => {
           if (error) {
             reject(error)
           } else {
@@ -77,13 +77,23 @@ class YtDlpManager {
   private async _installYtDlp(): Promise<void> {
     try {
       await new Promise((resolve, reject) => {
-        exec('winget install yt-dlp.yt-dlp ', (error) => {
-          if (error) {
-            reject(error)
-          } else {
-            resolve(undefined)
+        execFile(
+          'winget',
+          [
+            'install',
+            'yt-dlp.yt-dlp',
+            '--silent',
+            '--accept-package-agreements',
+            '--accept-source-agreements'
+          ],
+          (error) => {
+            if (error) {
+              reject(error)
+            } else {
+              resolve(undefined)
+            }
           }
-        })
+        )
       })
     } catch (err) {
       throw new Error(`Failed to install yt-dlp: ${err}`)

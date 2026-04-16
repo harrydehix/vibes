@@ -1,11 +1,11 @@
 {
   "name": "vibes",
-  "version": "1.0.9",
+  "version": "1.0.11",
   "description": "karaoke app for personal use",
   "repository": "github:harrydehix/vibes",
   "main": "./out/main/index.js",
   "author": "harrydehix",
-  "homepage": "https://electron-vite.org",
+  "homepage": "https://github.com/harrydehix/vibes",
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint --cache .",
