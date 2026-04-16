@@ -86,23 +86,6 @@ async function init() {
     })
   })
 
-  // Listener für erfolgreichen Download
-  autoUpdater.on('update-downloaded', (info) => {
-    dialog
-      .showMessageBox({
-        type: 'info',
-        title: 'Update downloaded',
-        message: `Version ${info.version} has been downloaded. Restart the application to apply the updates?`,
-        buttons: ['Install now', 'Later on exit']
-      })
-      .then((result) => {
-        if (result.response === 0) {
-          // Erstes Element: Index 0 ('Install now')
-          autoUpdater.quitAndInstall(false, true)
-        }
-      })
-  })
-
   autoUpdater.checkForUpdatesAndNotify()
 }
 
