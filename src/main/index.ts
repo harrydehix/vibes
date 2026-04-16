@@ -1,6 +1,7 @@
 import { app, shell, BrowserWindow, protocol, screen } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { autoUpdater } from 'electron-updater'
 import icon from '../../resources/icon.png?asset'
 import { settingsManager } from './ipc/settings'
 import { songManager } from './ipc/songs'
@@ -69,6 +70,7 @@ async function init() {
   dialogManager.defineIpcHandles()
   await downloaderManager.defineIpcHandles()
   createWindow()
+  autoUpdater.checkForUpdatesAndNotify()
 }
 
 protocol.registerSchemesAsPrivileged([

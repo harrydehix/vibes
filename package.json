@@ -1,7 +1,8 @@
 {
   "name": "vibes",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "karaoke app for personal use",
+  "repository": "github:harrydehix/vibes",
   "main": "./out/main/index.js",
   "author": "harrydehix",
   "homepage": "https://electron-vite.org",
