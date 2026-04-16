@@ -6,9 +6,9 @@ import PlayerSettings from './components/PlayerSettings.vue'
 import { useSettings } from './composables/useSettings'
 import { useSongs } from './composables/useSongs'
 
-useBackgroundMusic(false)
 useController()
-useSettings()
+const settings = useSettings()
+useBackgroundMusic(false, settings)
 useSongs()
 
 const settingsOpened = ref(false)
