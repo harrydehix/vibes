@@ -81,7 +81,7 @@ async function init() {
 
   autoUpdater.on('download-progress', (progress) => {
     // Sende Fortschrittsinformationen an den Renderer
-    BrowserWindow.getAllWindows().forEach((window) => {
+    BrowserWindow.getAllWindows().forEach((_) => {
       console.log(`Download progress: ${progress.percent}%`)
     })
   })
