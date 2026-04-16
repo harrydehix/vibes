@@ -4,11 +4,9 @@ import { accessBackgroundMusic } from '@renderer/composables/useBackgroundMusic'
 import { accessController } from '@renderer/composables/useController'
 import { accessSongs } from '@renderer/composables/useSongs'
 import { useSound } from '@renderer/composables/useSound'
-import { useYtdlp } from '@renderer/composables/useYtdlp'
 import router from '@renderer/router'
 import gsap from 'gsap'
 import { onUnmounted, ref, useCssModule, watch } from 'vue'
-import { toast } from 'vue3-toastify'
 import logoHarrydehix from '@renderer/assets/harrydehix.svg'
 import 'vue3-toastify/dist/index.css'
 import { onKeyStroke } from '@vueuse/core'
@@ -23,7 +21,6 @@ const loading = ref(false)
 
 const currentAnimation = ref<gsap.core.Timeline | null>(null)
 const { songs, refresh } = accessSongs()
-const ytdlp = useYtdlp()
 
 const { play } = useSound()
 
@@ -103,25 +100,6 @@ async function loadSongs() {
   ctx?.add(() => {
     gsap.timeline().to(`.${style.subtitle}`, { opacity: 1, duration: 0.3 })
   })
-
-  const success = await ytdlp.ensureInstalled()
-  if (!success) {
-    toast.error(
-      'Failed to ensure yt-dlp is installed. Please check the console for more details.',
-      {
-        theme: 'dark',
-        autoClose: 2000,
-        style: {
-          fontFamily: 'Outfit, sans-serif',
-          fontSize: '1rem',
-          fontWeight: '700',
-          width: 'fit-content'
-        }
-      }
-    )
-    loading.value = false
-    return
-  }
   await refresh()
   await new Promise((resolve) => {
     transitionTimeout = setTimeout(resolve, 1000)

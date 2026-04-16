@@ -3,6 +3,7 @@ import SongPlayer from './pages/SongPlayer.vue'
 import HomeScreen from './pages/HomeScreen.vue'
 import SongList from './pages/SongList.vue'
 import SongSearch from './pages/SongSearch.vue'
+import InstallingYtDlp from './pages/InstallingYtDlp.vue'
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -26,6 +27,11 @@ const router = createRouter({
       path: '/search',
       name: 'Search',
       component: SongSearch
+    },
+    {
+      path: '/installing',
+      name: 'Installing',
+      component: InstallingYtDlp
     }
   ]
 })

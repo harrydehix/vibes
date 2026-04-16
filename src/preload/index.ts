@@ -59,11 +59,6 @@ const api = {
         ipcRenderer.removeListener(IPC_CHANNELS.DOWNLOADER.PROGRESS, listener)
       }
     }
-  },
-  ytdlp: {
-    ensureInstalled: async (): Promise<boolean> => {
-      return await ipcRenderer.invoke(IPC_CHANNELS.YTDLP.ENSURE_INSTALLED)
-    }
   }
 }
 

@@ -16,8 +16,5 @@ export const IPC_CHANNELS = {
     SEARCH: 'downloader:search',
     DOWNLOAD: 'downloader:download',
     PROGRESS: 'downloader:progress'
-  },
-  YTDLP: {
-    ENSURE_INSTALLED: 'ytdlp:ensureInstalled'
   }
 } as const

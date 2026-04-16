@@ -1,6 +1,7 @@
 import { exec } from 'child_process'
-import { ipcMain } from 'electron'
-import { IPC_CHANNELS } from '../../shared/ipc'
+import { app, BrowserWindow } from 'electron'
+import { join } from 'path'
+import { is } from '@electron-toolkit/utils'
 
 class YtDlpManager {
   verified: boolean
@@ -10,20 +11,43 @@ class YtDlpManager {
   }
 
   async init() {
-    ipcMain.handle(IPC_CHANNELS.YTDLP.ENSURE_INSTALLED, async () => {
-      if (!this.verified) {
-        await this._ensureYtDlpInstalled()
-      }
-      return this.verified
-    })
+    await this._ensureYtDlpInstalled()
   }
 
   private async _ensureYtDlpInstalled(): Promise<void> {
     try {
       if (!(await this._isYtDlpInstalled())) {
         console.log('yt-dlp not found, installing...')
+
+        // Warte bis Electron zur Window-Erstellung bereit ist, falls init früh aufgerufen wird
+        await app.whenReady()
+
+        const loadingWindow = new BrowserWindow({
+          width: 450,
+          height: 300,
+          frame: false,
+          transparent: true,
+          webPreferences: {
+            sandbox: false
+          }
+        })
+
+        if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+          loadingWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/#/installing`)
+        } else {
+          loadingWindow.loadFile(join(__dirname, '../renderer/index.html'), { hash: 'installing' })
+        }
+
         await this._installYtDlp()
         console.log('yt-dlp installed successfully')
+
+        if (loadingWindow && !loadingWindow.isDestroyed()) {
+          loadingWindow.close()
+        }
+
+        console.log('Relaunching...')
+        app.relaunch()
+        app.exit(0)
       } else {
         console.log('yt-dlp is already installed')
       }
