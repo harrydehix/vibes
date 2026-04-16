@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, protocol, screen, dialog } from 'electron'
+import { app, shell, BrowserWindow, protocol, screen } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
