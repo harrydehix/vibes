@@ -32,9 +32,10 @@ function parseSongFile(content: string, folder: string, index: number, fixOffset
   for (const line of lines) {
     if (line.startsWith('#')) {
       // parse attribute
-      let [attributeName, attributeValue] = line.slice(1).split(':')
-      attributeValue = attributeValue.trim()
-      attributeName = attributeName.trim().toUpperCase()
+      const colonIndex = line.indexOf(':')
+      if (colonIndex === -1) continue
+      let attributeName = line.slice(1, colonIndex).trim().toUpperCase()
+      let attributeValue = line.slice(colonIndex + 1).trim()
       switch (attributeName) {
         case 'TITLE':
           result.title = attributeValue
