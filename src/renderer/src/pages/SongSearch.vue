@@ -235,6 +235,18 @@ function playIfDownloaded(isDownloaded: boolean, song: UsdbSong) {
     }
   }
 }
+
+const input = ref<HTMLInputElement | null>(null)
+
+watch(
+  input,
+  (el) => {
+    if (el) {
+      el.focus()
+    }
+  },
+  { immediate: true }
+)
 </script>
 
 <template>
@@ -242,7 +254,12 @@ function playIfDownloaded(isDownloaded: boolean, song: UsdbSong) {
     <div :class="$style.header">
       <div :class="$style.searchBar">
         <v-icon name="fa-search"></v-icon>
-        <input v-model="search" type="text" placeholder="Search for a song or artist..." />
+        <input
+          ref="input"
+          v-model="search"
+          type="text"
+          placeholder="Search for a song or artist..."
+        />
       </div>
       <div :class="$style.goToSongList" v-if="songs?.length > 0" @click="navigateToList()">
         <v-icon name="ri-arrow-go-back-line"></v-icon>

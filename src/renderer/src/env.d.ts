@@ -8,4 +8,5 @@ declare global {
   interface Window {
     api: AppAPI
   }
+  const __APP_VERSION__: string
 }

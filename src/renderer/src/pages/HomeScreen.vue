@@ -133,6 +133,8 @@ watch(
     }
   }
 )
+
+const version = __APP_VERSION__
 </script>
 
 <template>
@@ -153,6 +155,7 @@ watch(
         <template v-else>press any key</template>
       </div>
     </section>
+    <div :class="$style.version">v{{ version }}-beta</div>
   </div>
 </template>
 
@@ -235,5 +238,17 @@ watch(
   gap: 2rem;
   align-items: center;
   justify-content: center;
+}
+
+.version {
+  position: fixed;
+  bottom: 0;
+  padding: 1rem;
+  box-sizing: border-box;
+  width: 100%;
+  font-size: 0.8rem;
+  opacity: 0.5;
+  color: white;
+  z-index: 9999;
 }
 </style>
