@@ -241,7 +241,8 @@ onUnmounted(() => {
 })
 </script>
 <template>
-  <div ref="containerRef" :class="$style.lyricsContainer">
+  <div :class="$style.highContrast" v-if="settings?.highContrastMode"></div>
+  <div ref="containerRef" :class="`${$style.lyricsContainer}`">
     <div
       ref="trackRef"
       :class="$style.track"
@@ -253,7 +254,7 @@ onUnmounted(() => {
         v-for="(line, index) in lines.P1"
         :key="videoPlayer.currentSong.value.index"
         :ref="(el) => (lineDivs[index] = el as any)"
-        :class="$style.lyricsLine"
+        :class="`${$style.lyricsLine} ${settings?.highContrastMode ? $style.contrast : ''}`"
       >
         <div :class="$style.inner">
           <span
@@ -290,9 +291,25 @@ onUnmounted(() => {
   );
 }
 
+.highContrast {
+  position: fixed;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  // make it a cool colorful gradient or something in the future, only from blue to purple to not mess too much with the visibility of the lyrics
+  background: linear-gradient(
+    45deg,
+    rgba(0, 0, 255, 0.5) 0%,
+    rgba(128, 0, 128, 0.5) 50%,
+    rgba(0, 0, 255, 0.5) 100%
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
 .track {
   position: relative;
-
   font-size: 3rem;
 }
 
@@ -314,6 +331,14 @@ onUnmounted(() => {
     0 0 20px rgba(0, 0, 0, 1);
 
   .inner {
+  }
+
+  &.contrast {
+    background-color: black;
+    color: white;
+    span {
+      opacity: 0.8;
+    }
   }
 
   span {

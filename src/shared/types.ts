@@ -4,6 +4,7 @@ export type AppSettings = {
   sfxVolume: number
   lyricsFontScale: number
   syncOffsetMs: number
+  highContrastMode: boolean
 }
 
 export type Note =

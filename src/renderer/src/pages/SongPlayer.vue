@@ -5,7 +5,7 @@ import { accessController } from '@renderer/composables/useController'
 import { useVideoPlayer } from '@renderer/composables/useVideoPlayer'
 import gsap from 'gsap'
 
-import { onKeyStroke } from '@vueuse/core'
+import { onKeyStroke, set } from '@vueuse/core'
 import { onMounted, onUnmounted, ref, useCssModule, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import router from '@renderer/router'
@@ -49,6 +49,12 @@ onKeyStroke(['ArrowUp'], (isPressed) => {
       showTimeOffset.value = false
     }, 1000)
   }
+})
+
+onKeyStroke('c', (isPressed) => {
+  if (!settings.settings.value) return
+  if (isPressed)
+    settings.settings.value.highContrastMode = !settings.settings.value.highContrastMode
 })
 
 onKeyStroke(['ArrowDown'], (isPressed) => {
@@ -131,7 +137,11 @@ async function animateOut() {
 <template>
   <div ref="gsapScope" :class="$style.gsapScope">
     <div :class="$style.songArea">
-      <video :ref="player.video" playsinline :class="$style.videoPlayer"></video>
+      <video
+        :ref="player.video"
+        playsinline
+        :class="`${$style.videoPlayer} ${settings.settings?.value?.highContrastMode ? $style.highContrast : ''}`"
+      ></video>
       <SimpleKaraokeLyrics />
       <PlayerPauseMenu :animation-before-leave="animateOut" />
       <div :class="`${$style.timeOffset} ${showTimeOffset ? '' : $style.hidden}`">
@@ -162,6 +172,10 @@ async function animateOut() {
   z-index: -1;
   top: 0;
   left: 0;
+
+  &.highContrast {
+    opacity: 0.3;
+  }
 }
 
 .timeOffset {
