@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import LeavePopup from '@renderer/components/LeavePopup.vue'
 import { accessBackgroundMusic } from '@renderer/composables/useBackgroundMusic'
 import { accessController } from '@renderer/composables/useController'
 import { usePreviewPlayer } from '@renderer/composables/usePreviewPlayer'
@@ -10,6 +11,12 @@ import { onKeyStroke } from '@vueuse/core'
 import gsap from 'gsap'
 import { onMounted, onUnmounted, ref, useCssModule, watch } from 'vue'
 import { useRoute } from 'vue-router'
+
+const showExitPopup = ref(false)
+onKeyStroke('Escape', () => {
+  showExitPopup.value = true
+  console.log('Showing exit popup')
+})
 
 const route = useRoute()
 
@@ -189,6 +196,7 @@ function openSettings() {
 </script>
 <template>
   <main :class="$style.main" ref="gsapScope">
+    <leave-popup :show="showExitPopup" @cancel="showExitPopup = false" />
     <div :class="$style.content">
       <div :class="$style.buttons">
         <div :class="$style.search" @click="navigateToSearch">

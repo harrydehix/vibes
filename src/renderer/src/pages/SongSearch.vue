@@ -11,6 +11,7 @@ import { accessBackgroundMusic } from '@renderer/composables/useBackgroundMusic'
 import LoadingSpinner from '@renderer/components/LoadingSpinner.vue'
 import { useRoute } from 'vue-router'
 import { DownloadState, useDownloader } from '@renderer/composables/useDownloader'
+import { onKeyStroke } from '@vueuse/core'
 
 const { songs, refresh } = accessSongs()
 const $style = useCssModule()
@@ -79,6 +80,10 @@ onUnmounted(() => {
   ctx?.revert()
 })
 
+onKeyStroke('Escape', () => {
+  navigateToList(false)
+})
+
 const searchTimeout = ref<number | null>(null)
 
 const route = useRoute()
@@ -143,8 +148,10 @@ async function playLocalSong(song: Song) {
   }
 }
 
-function navigateToList() {
-  sound.play('click')
+function navigateToList(withSound = true) {
+  if (withSound) {
+    sound.play('click')
+  }
   fadeOut(() => {
     router.push({ path: '/song-list', query: { songIndex: previousSongIndex.value } })
   })
@@ -165,6 +172,7 @@ function fadeOut(callback: () => void) {
 
 async function downloadSong(song: UsdbSong) {
   await downloader.download(JSON.parse(JSON.stringify(song)))
+  sound.play('downloadSuccess')
 }
 
 function alreadyDownloaded(song: UsdbSong): boolean {
@@ -236,7 +244,7 @@ function playIfDownloaded(isDownloaded: boolean, song: UsdbSong) {
         <v-icon name="fa-search"></v-icon>
         <input v-model="search" type="text" placeholder="Search for a song or artist..." />
       </div>
-      <div :class="$style.goToSongList" v-if="songs?.length > 0" @click="navigateToList">
+      <div :class="$style.goToSongList" v-if="songs?.length > 0" @click="navigateToList()">
         <v-icon name="ri-arrow-go-back-line"></v-icon>
       </div>
     </div>

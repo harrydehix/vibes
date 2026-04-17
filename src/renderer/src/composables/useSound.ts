@@ -1,11 +1,13 @@
 import clickSound from '@renderer/assets/sounds/click.mp3'
 import hoverSound from '@renderer/assets/sounds/hover2.mp3'
+import downloadSuccess from '@renderer/assets/sounds/download-success.mp3'
 import { accessSettings } from './useSettings'
 import { watch } from 'vue'
 
 const defaultSoundMap = {
   click: clickSound,
-  hover: hoverSound
+  hover: hoverSound,
+  downloadSuccess: downloadSuccess
 }
 
 export function useSound(soundMap = defaultSoundMap) {
