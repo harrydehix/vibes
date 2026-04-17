@@ -5,7 +5,7 @@ import { accessController } from '@renderer/composables/useController'
 import { useVideoPlayer } from '@renderer/composables/useVideoPlayer'
 import gsap from 'gsap'
 
-import { onKeyStroke, set } from '@vueuse/core'
+import { onKeyStroke } from '@vueuse/core'
 import { onMounted, onUnmounted, ref, useCssModule, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import router from '@renderer/router'
