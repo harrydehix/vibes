@@ -9,9 +9,7 @@ import { onKeyStroke } from '@vueuse/core'
 import { onMounted, onUnmounted, ref, useCssModule, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import router from '@renderer/router'
-import { setTime } from 'effect/TestClock'
 import { accessSettings } from '@renderer/composables/useSettings'
-import { useSettingsView } from '@renderer/composables/useSettingsView'
 
 /* songIndex is passed via route query, e.g. /song-player?songIndex=2 */
 
@@ -38,7 +36,6 @@ const { controller } = accessController()
 
 const showTimeOffset = ref(false)
 let hideTimeOffsetTimeout: ReturnType<typeof setTimeout> | null = null
-const { settingsOpened } = useSettingsView()
 
 const settings = accessSettings()
 onKeyStroke(['ArrowUp'], (isPressed) => {
