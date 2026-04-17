@@ -36,7 +36,7 @@ watch(
     controller.value &&
     (controller.value.dpad.down.pressed || controller.value.stick.left.vertical > 0.75),
   (isPressed) => {
-    if (isPressed) {
+    if (isPressed && player.pausedByUser.value) {
       activeIndex.value = (activeIndex.value + 1) % menu.items.length
     }
   }
@@ -47,17 +47,19 @@ watch(
     controller.value &&
     (controller.value.dpad.up.pressed || controller.value.stick.left.vertical < -0.75),
   (isPressed) => {
-    if (isPressed) {
+    if (isPressed && player.pausedByUser.value) {
       activeIndex.value = (activeIndex.value - 1 + menu.items.length) % menu.items.length
     }
   }
 )
 
 onKeyStroke(['ArrowDown'], (event) => {
+  if (!player.pausedByUser.value) return
   event.preventDefault()
   activeIndex.value = (activeIndex.value + 1) % menu.items.length
 })
 onKeyStroke(['ArrowUp'], (event) => {
+  if (!player.pausedByUser.value) return
   event.preventDefault()
   activeIndex.value = (activeIndex.value - 1 + menu.items.length) % menu.items.length
 })
@@ -65,7 +67,7 @@ onKeyStroke(['ArrowUp'], (event) => {
 watch(
   () => controller.value && controller.value.buttons.a.pressed,
   (isPressed) => {
-    if (isPressed) {
+    if (isPressed && player.pausedByUser.value) {
       menuItemRefs.value[activeIndex.value]?.click()
     }
   }

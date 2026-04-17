@@ -9,6 +9,9 @@ import { onKeyStroke } from '@vueuse/core'
 import { onMounted, onUnmounted, ref, useCssModule, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import router from '@renderer/router'
+import { setTime } from 'effect/TestClock'
+import { accessSettings } from '@renderer/composables/useSettings'
+import { useSettingsView } from '@renderer/composables/useSettingsView'
 
 /* songIndex is passed via route query, e.g. /song-player?songIndex=2 */
 
@@ -32,6 +35,37 @@ const { controller } = accessController()
 //     player.seek(time)
 //   }
 // })
+
+const showTimeOffset = ref(false)
+let hideTimeOffsetTimeout: ReturnType<typeof setTimeout> | null = null
+const { settingsOpened } = useSettingsView()
+
+const settings = accessSettings()
+onKeyStroke(['ArrowUp'], (isPressed) => {
+  if (player.pausedByUser.value) return
+  if (hideTimeOffsetTimeout) clearTimeout(hideTimeOffsetTimeout)
+  if (!settings.settings.value) return
+  if (isPressed) {
+    showTimeOffset.value = true
+    settings.settings.value.syncOffsetMs += 25
+    hideTimeOffsetTimeout = setTimeout(() => {
+      showTimeOffset.value = false
+    }, 1000)
+  }
+})
+
+onKeyStroke(['ArrowDown'], (isPressed) => {
+  if (player.pausedByUser.value) return
+  if (hideTimeOffsetTimeout) clearTimeout(hideTimeOffsetTimeout)
+  if (!settings.settings.value) return
+  if (isPressed) {
+    showTimeOffset.value = true
+    settings.settings.value.syncOffsetMs -= 25
+    hideTimeOffsetTimeout = setTimeout(() => {
+      showTimeOffset.value = false
+    }, 1000)
+  }
+})
 
 watch(
   () => controller.value?.start.pressed,
@@ -103,6 +137,9 @@ async function animateOut() {
       <video :ref="player.video" playsinline :class="$style.videoPlayer"></video>
       <SimpleKaraokeLyrics />
       <PlayerPauseMenu :animation-before-leave="animateOut" />
+      <div :class="`${$style.timeOffset} ${showTimeOffset ? '' : $style.hidden}`">
+        <div :class="$style.slider">{{ settings.settings?.value?.syncOffsetMs }} ms</div>
+      </div>
     </div>
   </div>
 </template>
@@ -128,5 +165,22 @@ async function animateOut() {
   z-index: -1;
   top: 0;
   left: 0;
+}
+
+.timeOffset {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  background-color: white;
+  padding: 1rem;
+  border-radius: 1rem;
+  font-size: 1.5rem;
+  z-index: 9999;
+  pointer-events: none;
+  transition: all 0.5s;
+
+  &.hidden {
+    opacity: 0;
+  }
 }
 </style>
