@@ -5,6 +5,7 @@ export type AppSettings = {
   lyricsFontScale: number
   syncOffsetMs: number
   highContrastMode: boolean
+  lowPerformanceMode: boolean
 }
 
 export type Note =

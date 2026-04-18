@@ -14,7 +14,8 @@ const defaultSettings: AppSettings = {
   sfxVolume: 0.8,
   lyricsFontScale: 1.4,
   syncOffsetMs: -150,
-  highContrastMode: false
+  highContrastMode: false,
+  lowPerformanceMode: false
 }
 
 class SettingsManager {

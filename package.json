@@ -1,6 +1,6 @@
 {
   "name": "vibes",
-  "version": "1.0.15",
+  "version": "1.0.16",
   "description": "karaoke app for personal use",
   "repository": "github:harrydehix/vibes",
   "main": "./out/main/index.js",

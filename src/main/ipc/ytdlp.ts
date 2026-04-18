@@ -10,7 +10,7 @@ class YtDlpManager {
     this.verified = false
   }
 
-  async init() {
+  async init(): Promise<void> {
     await this._ensureYtDlpInstalled()
   }
 
@@ -69,7 +69,7 @@ class YtDlpManager {
         })
       })
       return true
-    } catch (error) {
+    } catch (_) {
       return false
     }
   }
@@ -83,6 +83,8 @@ class YtDlpManager {
             'install',
             'yt-dlp.yt-dlp',
             '--silent',
+            '--force',
+            '--disable-interactivity',
             '--accept-package-agreements',
             '--accept-source-agreements'
           ],

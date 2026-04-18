@@ -198,6 +198,16 @@ const backgroundMusic = accessBackgroundMusic()
     height: 12rem;
     object-fit: cover;
     border-radius: 8px;
+
+    @media (max-height: 900px) {
+      width: 10rem;
+      height: 10rem;
+    }
+
+    @media (max-height: 800px) {
+      width: 8rem;
+      height: 8rem;
+    }
   }
 
   .songDetails {
@@ -211,12 +221,28 @@ const backgroundMusic = accessBackgroundMusic()
       font-size: 4rem;
       font-weight: 600;
       padding: 0;
+
+      @media (max-height: 900px) {
+        font-size: 3.5rem;
+      }
+
+      @media (max-height: 800px) {
+        font-size: 2.75rem;
+      }
     }
 
     h3 {
       margin: 0;
       font-size: 2.2rem;
       font-weight: 300;
+
+      @media (max-height: 900px) {
+        font-size: 2rem;
+      }
+
+      @media (max-height: 800px) {
+        font-size: 1.6rem;
+      }
     }
 
     .songState {
@@ -260,5 +286,18 @@ const backgroundMusic = accessBackgroundMusic()
   justify-content: center;
   gap: 2rem;
   box-sizing: border-box;
+
+  @media (max-height: 1000px) {
+    gap: 1.5rem;
+  }
+
+  // small height screens
+  @media (max-height: 900px) {
+    gap: 1rem;
+  }
+
+  @media (max-height: 800px) {
+    gap: 0.75rem;
+  }
 }
 </style>

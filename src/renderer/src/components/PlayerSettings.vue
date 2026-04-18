@@ -117,6 +117,19 @@ function closeSettings() {
         <h2>Song Sources</h2>
         <Folders v-model="settings!.songFolders" />
       </div>
+      <div
+        :class="$style.settingsMenu"
+        :style="{
+          gridColumnStart: 1,
+          gridColumnEnd: 3
+        }"
+      >
+        <h2>Performance</h2>
+        <div :class="`${$style.settingsItem} ${$style.checkboxItem}`">
+          <span>Low Performance Mode</span>
+          <input type="checkbox" v-model="settings!.lowPerformanceMode" />
+        </div>
+      </div>
       <div :class="$style.goBack">
         <button @click="closeSettings">
           <v-icon name="ri-arrow-go-back-line"></v-icon>
@@ -147,7 +160,7 @@ function closeSettings() {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 2rem;
-  grid-template-rows: auto auto 1fr;
+  grid-template-rows: auto auto auto 1fr;
   height: 100%;
 }
 
@@ -190,6 +203,21 @@ function closeSettings() {
     background-color: rgba(255, 255, 255, 0.11);
     border-radius: 8px;
 
+    &.checkboxItem {
+      grid-template-columns: auto 2rem;
+
+      // modern styled checkbox
+      input {
+        width: 1.5rem;
+        height: 1.5rem;
+        cursor: pointer;
+        margin: 0;
+        accent-color: #d3d3d3;
+        outline: none;
+        border-radius: 0.54rem;
+      }
+    }
+
     span {
       color: white;
       font-size: 1.5rem;
@@ -201,7 +229,7 @@ function closeSettings() {
   width: 100%;
   grid-column-start: 1;
   grid-column-end: 3;
-  grid-row: 3;
+  grid-row: 4;
   display: flex;
 
   button {

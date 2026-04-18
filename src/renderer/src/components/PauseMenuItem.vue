@@ -77,9 +77,38 @@ defineExpose({ click: onClick })
   transition: all 0.2s ease;
   opacity: 0.8;
 
+  @media (max-height: 900px) {
+    font-size: 1.7rem;
+    padding: 1.2rem 2.2rem;
+  }
+
+  @media (max-height: 1000px) {
+    font-size: 1.8rem;
+    padding: 1.25rem 2.3rem;
+  }
+
+  @media (max-height: 800px) {
+    font-size: 1.6rem;
+  }
+
   svg {
     width: 2.5rem;
     height: 2.5rem;
+
+    @media (max-height: 900px) {
+      width: 2rem;
+      height: 2rem;
+    }
+
+    @media (max-height: 800px) {
+      width: 1.75rem;
+      height: 1.75rem;
+    }
+
+    @media (max-height: 700px) {
+      width: 1.5rem;
+      height: 1.5rem;
+    }
   }
 
   &.active {

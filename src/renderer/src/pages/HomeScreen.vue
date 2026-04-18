@@ -177,6 +177,10 @@ const version = __APP_VERSION__
 
   img {
     width: 40rem;
+
+    @media screen and (max-height: 900px) {
+      width: 30rem;
+    }
   }
 }
 .copyrightScreen {
@@ -197,6 +201,10 @@ const version = __APP_VERSION__
   left: 0;
   opacity: 0;
   z-index: 999;
+
+  @media screen and (max-height: 900px) {
+    font-size: 1.8rem;
+  }
 }
 
 .endScreen {
@@ -224,6 +232,18 @@ const version = __APP_VERSION__
   scale: 0;
   opacity: 0;
   text-shadow: none;
+
+  @media screen and (max-height: 900px) {
+    font-size: 15rem;
+  }
+
+  @media screen and (max-height: 800px) {
+    font-size: 13rem;
+  }
+
+  @media screen and (max-height: 700px) {
+    font-size: 11rem;
+  }
 }
 
 .subtitle {

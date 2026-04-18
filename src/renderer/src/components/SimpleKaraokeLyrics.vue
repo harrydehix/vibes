@@ -13,6 +13,8 @@ const trackRef = ref<HTMLDivElement | null>(null)
 const lineDivs = ref<HTMLDivElement[]>([])
 const currentActiveLineIndex = ref<number>(-1)
 const currentActiveSyllableIndex = ref<number>(-1)
+const lineHeights = ref<number[]>([])
+const virtualizationEnabled = ref(false)
 
 const { settings } = accessSettings()
 
@@ -76,18 +78,25 @@ async function adjustFontScale() {
 watch(
   () => [lines.value, settings.value?.lyricsFontScale],
   async () => {
+    virtualizationEnabled.value = false
     dynamicFontScale.value = settings.value?.lyricsFontScale ?? 1
     await nextTick()
     await adjustFontScale()
+    await nextTick()
+    lineHeights.value = lineDivs.value.map((div) => div?.offsetHeight || 0)
+    virtualizationEnabled.value = true
     scrollToLine(0, false)
   },
   { immediate: true, deep: true }
 )
 
 function handleResize() {
+  virtualizationEnabled.value = false
   dynamicFontScale.value = settings.value?.lyricsFontScale ?? 1
-  nextTick(() => {
-    adjustFontScale()
+  nextTick(async () => {
+    await adjustFontScale()
+    lineHeights.value = lineDivs.value.map((div) => div?.offsetHeight || 0)
+    virtualizationEnabled.value = true
   })
 }
 
@@ -252,9 +261,18 @@ onUnmounted(() => {
     >
       <div
         v-for="(line, index) in lines.P1"
-        :key="videoPlayer.currentSong.value.index"
+        :key="videoPlayer.currentSong.value.index + '-' + index"
         :ref="(el) => (lineDivs[index] = el as any)"
-        :class="`${$style.lyricsLine} ${settings?.highContrastMode ? $style.contrast : ''}`"
+        :class="`${$style.lyricsLine} ${settings?.highContrastMode ? $style.contrast : ''} ${!settings?.lowPerformanceMode ? $style.highPerformance : ''}`"
+        :style="
+          virtualizationEnabled && lineHeights[index]
+            ? {
+                height: lineHeights[index] + 'px',
+                boxSizing: 'border-box',
+                contentVisibility: 'auto'
+              }
+            : {}
+        "
       >
         <div :class="$style.inner">
           <span
@@ -325,10 +343,12 @@ onUnmounted(() => {
   border-radius: 1rem;
   padding: 0 0.2rem;
   width: fit-content;
-  text-shadow:
-    0 0 5px rgba(255, 255, 255, 0.8),
-    0 0 10px rgba(255, 255, 255, 0.6),
-    0 0 20px rgba(0, 0, 0, 1);
+  &.highPerformance {
+    text-shadow:
+      0 0 5px rgba(255, 255, 255, 0.8),
+      0 0 10px rgba(255, 255, 255, 0.6),
+      0 0 20px rgba(0, 0, 0, 1);
+  }
 
   .inner {
   }
