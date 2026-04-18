@@ -3,7 +3,7 @@ import { Line, Note, Song } from '../../shared/types'
 import { settingsManager } from './settings'
 import { ipcMain } from 'electron'
 import { IPC_CHANNELS } from '../../shared/ipc'
-import path from 'path/win32'
+import path from 'path'
 
 function parseSongFile(content: string, folder: string, index: number, fixOffsetMs: number): Song {
   const result: Song = {

@@ -77,25 +77,46 @@ class YtDlpManager {
   private async _installYtDlp(): Promise<void> {
     try {
       await new Promise((resolve, reject) => {
-        execFile(
-          'winget',
-          [
-            'install',
-            'yt-dlp.yt-dlp',
-            '--silent',
-            '--force',
-            '--disable-interactivity',
-            '--accept-package-agreements',
-            '--accept-source-agreements'
-          ],
-          (error) => {
-            if (error) {
-              reject(error)
-            } else {
-              resolve(undefined)
+        // check os
+        if (process.platform === 'win32') {
+          execFile(
+            'winget',
+            [
+              'install',
+              'yt-dlp.yt-dlp',
+              '--silent',
+              '--force',
+              '--disable-interactivity',
+              '--accept-package-agreements',
+              '--accept-source-agreements'
+            ],
+            (error) => {
+              if (error) {
+                reject(error)
+              } else {
+                resolve(undefined)
+              }
             }
-          }
-        )
+          )
+        } else if (process.platform === 'darwin') {
+          execFile(
+            'brew',
+            ['install', 'yt-dlp'],
+            {
+              env: {
+                ...process.env,
+                HOMEBREW_NO_ENV_HINTS: '1'
+              }
+            },
+            (error) => {
+              if (error) {
+                reject(error)
+              } else {
+                resolve(undefined)
+              }
+            }
+          )
+        }
       })
     } catch (err) {
       throw new Error(`Failed to install yt-dlp: ${err}`)
