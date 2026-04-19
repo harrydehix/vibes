@@ -1,8 +1,8 @@
 # vibes
 
-Song Carousel           |  Lyrics Player
-:-------------------------:|:-------------------------:
-![](./screens/img2.png)  |  ![](./screens/img1.png)
+|      Song Carousel      |      Lyrics Player      |
+| :---------------------: | :---------------------: |
+| ![](./screens/img2.png) | ![](./screens/img1.png) |
 
 _vibes_ is a small karaoke application that plays text files synchronized to the UltraStar format. It interfaces with community databases like USDB Animux and utilizes yt-dlp in the background to stream publicly available media.
 
@@ -10,9 +10,9 @@ _vibes_ is a small karaoke application that plays text files synchronized to the
 
 ## Installation
 
-Vibes provides first hand support for windows. MacOS and Linux are also supported but may be less stable. You can download the latest release from the [releases page](https://github.com/harrydehix/vibes/releases).
+Vibes provides first hand support for Windows. MacOS and Linux are also supported but may be less stable. You can download the latest release from the [releases page](https://github.com/harrydehix/vibes/releases).
 
-### Trouble Shooting
+### Troubleshooting
 
 If you aren't able to download any songs try to restart the application. Most of the time this fixes the problem. If that doesn't work, make sure you have yt-dlp installed and that it's in your system's PATH. You can check if yt-dlp is installed by running `yt-dlp --version` in your terminal or command prompt. If it's not installed, you can download it from the [yt-dlp GitHub repository](https://github.com/yt-dlp/yt-dlp).
 
