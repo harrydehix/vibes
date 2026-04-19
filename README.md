@@ -1,9 +1,8 @@
 # vibes
 
-<div style="display: grid; align-items: center; gap: 20px; justify-content: center; margin-bottom: 20px; grid-template-columns: 1fr 1fr;">
-  <img src="./screens/img2.png" alt="vibes logo" style="width: 100%; height: auto; border-radius: 10px;"/>
-  <img src="./screens/img1.png" alt="vibes logo" style="width: 100%; height: auto; border-radius: 10px;"/>
-</div>
+Song Carousel           |  Lyrics Player
+:-------------------------:|:-------------------------:
+![](./screens/img2.png)  |  ![](./screens/img1.png)
 
 _vibes_ is a small karaoke application that plays text files synchronized to the UltraStar format. It interfaces with community databases like USDB Animux and utilizes yt-dlp in the background to stream publicly available media.
 
@@ -31,7 +30,7 @@ Use `ArrowUp` and `ArrowDown` to change the sync time of the lyrics dynamically 
 
 Use `Esc` to open the pause menu. From there you can restart the song, go back to the song list, change settings or quit the app.
 
-### Keyboard Shortcuts for the Song List
+### Keyboard Shortcuts for the Song Carousel
 
 Use `ArrowLeft` and `ArrowRight` to navigate the song list. Press `Enter` to play the selected song.
 
