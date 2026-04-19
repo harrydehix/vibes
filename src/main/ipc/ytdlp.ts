@@ -10,17 +10,19 @@ class YtDlpManager {
 
   constructor() {
     this.verified = false
-    this.binPath = 'yt-dlp'
-  }
-
-  async init(): Promise<void> {
     if (process.platform === 'darwin') {
       const customBinDir = join(app.getPath('userData'), 'bin')
       if (!fs.existsSync(customBinDir)) fs.mkdirSync(customBinDir, { recursive: true })
       process.env.PATH = `${customBinDir}:${process.env.PATH}`
       this.binPath = join(customBinDir, 'yt-dlp')
+    } else if (process.platform === 'win32') {
+      this.binPath = join(app.getPath('userData'), 'yt-dlp.exe')
+    } else {
+      this.binPath = join(app.getPath('userData'), 'yt-dlp')
     }
+  }
 
+  async init(): Promise<void> {
     await this._ensureYtDlpInstalled()
   }
 
@@ -29,7 +31,6 @@ class YtDlpManager {
       if (!(await this._isYtDlpInstalled())) {
         console.log('yt-dlp not found, installing...')
 
-        // Warte bis Electron zur Window-Erstellung bereit ist, falls init früh aufgerufen wird
         await app.whenReady()
 
         const loadingWindow = new BrowserWindow({
@@ -90,15 +91,11 @@ class YtDlpManager {
         // check os
         if (process.platform === 'win32') {
           execFile(
-            'winget',
+            'powershell.exe',
             [
-              'install',
-              'yt-dlp.yt-dlp',
-              '--silent',
-              '--force',
-              '--disable-interactivity',
-              '--accept-package-agreements',
-              '--accept-source-agreements'
+              '-NoProfile',
+              '-Command',
+              `Invoke-WebRequest -Uri "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" -OutFile "${this.binPath}" -UseBasicParsing`
             ],
             (error) => {
               if (error) {
@@ -109,12 +106,26 @@ class YtDlpManager {
             }
           )
         } else if (process.platform === 'darwin') {
-          // macOS: Lade die Binary direkt herunter, anstatt sich auf Homebrew zu verlassen.
           execFile(
             'bash',
             [
               '-c',
               `curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos -o "${this.binPath}" && chmod a+rx "${this.binPath}"`
+            ],
+            (error) => {
+              if (error) {
+                reject(error)
+              } else {
+                resolve(undefined)
+              }
+            }
+          )
+        } else if (process.platform === 'linux') {
+          execFile(
+            'bash',
+            [
+              '-c',
+              `curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux -o "${this.binPath}" && chmod a+rx "${this.binPath}"`
             ],
             (error) => {
               if (error) {
