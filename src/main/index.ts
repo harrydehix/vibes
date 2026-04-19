@@ -1,4 +1,5 @@
-import { app, shell, BrowserWindow, protocol, screen } from 'electron'
+import { app, shell, BrowserWindow, protocol, screen, net } from 'electron'
+import { pathToFileURL } from 'url'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
@@ -7,7 +8,7 @@ import { settingsManager } from './ipc/settings'
 import { songManager } from './ipc/songs'
 import { dialogManager } from './ipc/dialogs'
 import { downloaderManager } from './ipc/downloaderManager'
-import { createReadStream, statSync, existsSync } from 'fs'
+import { existsSync } from 'fs'
 import { ytDlpManager } from './ipc/ytdlp'
 
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
@@ -124,47 +125,9 @@ app.whenReady().then(() => {
       return new Response('File not found', { status: 404 })
     }
 
-    const stat = statSync(actualPath)
-    const total = stat.size
-    const rangeHeader = request.headers.get('Range') || request.headers.get('range')
-
-    let contentType = 'video/mp4' // default
-    if (actualPath.endsWith('.webm')) contentType = 'video/webm'
-    else if (actualPath.endsWith('.mp3')) contentType = 'audio/mpeg'
-
-    const { Readable } = require('stream')
-
-    if (rangeHeader) {
-      const parts = rangeHeader.replace(/bytes=/, '').split('-')
-      const partialstart = parts[0]
-      const partialend = parts[1]
-
-      const start = parseInt(partialstart, 10)
-      const end = partialend ? parseInt(partialend, 10) : total - 1
-      const chunksize = end - start + 1
-
-      const stream = createReadStream(actualPath, { start, end })
-
-      return new Response(Readable.toWeb(stream) as any, {
-        status: 206,
-        headers: {
-          'Content-Range': `bytes ${start}-${end}/${total}`,
-          'Accept-Ranges': 'bytes',
-          'Content-Length': chunksize.toString(),
-          'Content-Type': contentType
-        }
-      })
-    } else {
-      const stream = createReadStream(actualPath)
-      return new Response(Readable.toWeb(stream) as any, {
-        status: 200,
-        headers: {
-          'Accept-Ranges': 'bytes',
-          'Content-Length': total.toString(),
-          'Content-Type': contentType
-        }
-      })
-    }
+    return net.fetch(pathToFileURL(actualPath).toString(), {
+      bypassCustomProtocolHandlers: true
+    })
   })
 
   init()

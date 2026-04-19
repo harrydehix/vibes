@@ -2,15 +2,25 @@ import { execFile } from 'child_process'
 import { app, BrowserWindow } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
+import fs from 'fs'
 
 class YtDlpManager {
   verified: boolean
+  binPath: string
 
   constructor() {
     this.verified = false
+    this.binPath = 'yt-dlp'
   }
 
   async init(): Promise<void> {
+    if (process.platform === 'darwin') {
+      const customBinDir = join(app.getPath('userData'), 'bin')
+      if (!fs.existsSync(customBinDir)) fs.mkdirSync(customBinDir, { recursive: true })
+      process.env.PATH = `${customBinDir}:${process.env.PATH}`
+      this.binPath = join(customBinDir, 'yt-dlp')
+    }
+
     await this._ensureYtDlpInstalled()
   }
 
@@ -60,7 +70,7 @@ class YtDlpManager {
   private async _isYtDlpInstalled(): Promise<boolean> {
     try {
       await new Promise((resolve, reject) => {
-        execFile('yt-dlp', ['--version'], (error) => {
+        execFile(this.binPath, ['--version'], (error) => {
           if (error) {
             reject(error)
           } else {
@@ -99,15 +109,13 @@ class YtDlpManager {
             }
           )
         } else if (process.platform === 'darwin') {
+          // macOS: Lade die Binary direkt herunter, anstatt sich auf Homebrew zu verlassen.
           execFile(
-            'brew',
-            ['install', 'yt-dlp'],
-            {
-              env: {
-                ...process.env,
-                HOMEBREW_NO_ENV_HINTS: '1'
-              }
-            },
+            'bash',
+            [
+              '-c',
+              `curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos -o "${this.binPath}" && chmod a+rx "${this.binPath}"`
+            ],
             (error) => {
               if (error) {
                 reject(error)

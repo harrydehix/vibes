@@ -1,0 +1,40 @@
+name: Build and Release Mac
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    permissions:
+      contents: write # WICHTIG: Damit die Action Berechtigung hat, die Dateien an das Release anzuhängen
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24 # Analog zur Windows-Action
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Mac App
+        # Wir bauen nur die Mac-Version und überlassen das Veröffentlichen der Action
+        run: npm run build && npx electron-builder --mac -p never
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.yml
+            dist/*.blockmap
