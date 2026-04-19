@@ -13,14 +13,9 @@ useSongs()
 
 const settingsOpened = ref(false)
 provide('settingsOpened', settingsOpened)
-
-// onKeyDown('Control', () => {
-//   settingsOpened.value = !settingsOpened.value
-// })
 </script>
 
 <template>
-  <!-- <SpatialDemo /> -->
   <router-view></router-view>
   <player-settings v-if="settingsOpened" />
 </template>

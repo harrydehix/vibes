@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { accessVideoPlayer } from '@renderer/composables/useVideoPlayer'
+import { accessSongPlayer } from '@renderer/composables/useSongPlayer'
 import { ref, watch } from 'vue'
 import { accessLocalFile } from '@renderer/utils/accessLocalFile'
 import PauseMenuItem from './PauseMenuItem.vue'
@@ -15,7 +15,7 @@ const props = defineProps<{
 }>()
 
 const { controller } = accessController()
-const player = accessVideoPlayer()
+const player = accessSongPlayer()
 const { settingsOpened } = useSettingsView()
 
 const activeIndex = ref(0)
@@ -36,7 +36,7 @@ watch(
     controller.value &&
     (controller.value.dpad.down.pressed || controller.value.stick.left.vertical > 0.75),
   (isPressed) => {
-    if (isPressed && player.pausedByUser.value) {
+    if (isPressed && player.isPlaying.value) {
       activeIndex.value = (activeIndex.value + 1) % menu.items.length
     }
   }
@@ -79,7 +79,7 @@ async function handleMenuItemClick(item: (typeof menu.items)[number]) {
       player.play()
       break
     case 'restart':
-      await player.seek(0)
+      await player.seek(0, true)
       player.play()
       break
     case 'back-to-song-list':

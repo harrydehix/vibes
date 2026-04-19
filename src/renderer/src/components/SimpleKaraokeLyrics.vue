@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { accessSettings } from '@renderer/composables/useSettings'
-import { accessVideoPlayer } from '@renderer/composables/useVideoPlayer'
+import { accessSongPlayer } from '@renderer/composables/useSongPlayer'
 import { Line } from '@shared/types'
 import { gsap } from 'gsap'
 import { computed, onMounted, onUnmounted, ref, watch, nextTick } from 'vue'
 
-const videoPlayer = accessVideoPlayer()
+const videoPlayer = accessSongPlayer()
 
 const containerRef = ref<HTMLDivElement | null>(null)
 const trackRef = ref<HTMLDivElement | null>(null)
@@ -113,7 +113,7 @@ function handleResize() {
 watch(
   () => videoPlayer.isPlaying.value,
   (isPlaying) => {
-    if (isPlaying && videoPlayer.video.value && videoPlayer.video.value.currentTime < 0.5) {
+    if (isPlaying && videoPlayer.video.value && videoPlayer.getCurrentTime() < 0.5) {
       scrollToLine(0, false)
     }
   }
@@ -122,7 +122,7 @@ watch(
 const syncTimeline = () => {
   if (videoPlayer.video.value) {
     const offsetMs = -(settings.value?.syncOffsetMs ?? -200)
-    const time = videoPlayer.video.value.currentTime * 1000 + offsetMs
+    const time = videoPlayer.getCurrentTime() * 1000 + offsetMs
 
     const activeLineIndex = lines.value.P1.findIndex(
       (item) => time >= item.startTimeMs && time <= item.endTimeMs
@@ -259,7 +259,10 @@ onUnmounted(() => {
 })
 </script>
 <template>
-  <div :class="$style.highContrast" v-if="settings?.highContrastMode"></div>
+  <div
+    :class="$style.highContrast"
+    v-if="settings?.highContrastMode || !videoPlayer.isUsingVideo.value"
+  ></div>
   <div ref="containerRef" :class="`${$style.lyricsContainer}`">
     <div
       ref="trackRef"
@@ -272,7 +275,7 @@ onUnmounted(() => {
         v-for="(line, index) in lines.P1"
         :key="videoPlayer.currentSong.value.index + '-' + index"
         :ref="(el) => (lineDivs[index] = el as any)"
-        :class="`${$style.lyricsLine} ${settings?.highContrastMode ? $style.contrast : ''} ${!settings?.lowPerformanceMode ? $style.highPerformance : ''}`"
+        :class="`${$style.lyricsLine} ${settings?.highContrastMode && videoPlayer.isUsingVideo.value ? $style.contrast : ''} ${!settings?.lowPerformanceMode ? $style.highPerformance : ''}`"
         :style="
           virtualizationEnabled && lineHeights[index]
             ? {

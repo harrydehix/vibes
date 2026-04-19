@@ -22,7 +22,9 @@ function parseSongFile(content: string, folder: string, index: number, fixOffset
     },
     index,
     fixOffsetMs,
-    folder
+    folder,
+    usesAudio: false,
+    usesVideo: false
   }
 
   const lines = content.split('\n')
@@ -51,7 +53,7 @@ function parseSongFile(content: string, folder: string, index: number, fixOffset
           result.ultrastarBpm = parseFloat(attributeValue)
           break
         case 'GAP':
-          result.gap = parseInt(attributeValue)
+          result.gapMilliseconds = parseInt(attributeValue)
           break
         case 'COVER':
           result.cover = path.join(folder, attributeValue)
@@ -61,9 +63,10 @@ function parseSongFile(content: string, folder: string, index: number, fixOffset
           break
         case 'VIDEO':
           result.video = path.join(folder, attributeValue)
+          result.usesVideo = true
           break
         case 'VIDEOGAP':
-          result.videoGap = parseInt(attributeValue)
+          result.videoGapSeconds = parseFloat(attributeValue)
           break
         case 'VOCALS':
           result.vocals = attributeValue
@@ -88,14 +91,14 @@ function parseSongFile(content: string, folder: string, index: number, fixOffset
           result.year = parseInt(attributeValue)
           break
         case 'START':
-          result.start = parseFloat(attributeValue)
+          result.audioStartSeconds = parseFloat(attributeValue)
           break
         case 'END':
-          result.end = parseFloat(attributeValue)
+          result.audioEndSeconds = parseFloat(attributeValue)
           break
         case 'PREVIEWSTART':
         case 'PREVIEW':
-          result.previewStart = parseFloat(attributeValue)
+          result.previewStartSeconds = parseFloat(attributeValue)
           break
         case 'COMMENT':
           result.comment = attributeValue
@@ -130,6 +133,13 @@ function parseSongFile(content: string, folder: string, index: number, fixOffset
       noteLines.push(line)
     }
   }
+
+  result.videoStartSeconds = (result.audioStartSeconds ?? 0) + (result.videoGapSeconds ?? 0)
+  result.videoEndSeconds = result.audioEndSeconds
+    ? result.audioEndSeconds + (result.videoGapSeconds ?? 0)
+    : undefined
+
+  result.usesAudio = result.audio !== '' && !result.audio.includes('.mp4')
 
   // Parse notes
   let currentPlayer: 'P1' | 'P2' = 'P1'
@@ -207,7 +217,7 @@ function parseSongFile(content: string, folder: string, index: number, fixOffset
   }
   let currentPlayerForLine: 'P1' | 'P2' = 'P1'
   for (const note of result.notes) {
-    const startBeatTimeMs = beatsToTimeMs(result, note.startBeat)
+    const startBeatTimeMs = beatsToAudioTimeMs(result, note.startBeat)
     if (currentLine.startTimeMs === undefined) {
       currentLine.startTimeMs = startBeatTimeMs
     }
@@ -224,7 +234,7 @@ function parseSongFile(content: string, folder: string, index: number, fixOffset
       currentLine.syllables!.push({
         text: note.text,
         startTimeMs: startBeatTimeMs,
-        endTimeMs: beatsToTimeMs(result, note.startBeat + note.length)
+        endTimeMs: beatsToAudioTimeMs(result, note.startBeat + note.length)
       })
     }
   }
@@ -237,9 +247,14 @@ function parseSongFile(content: string, folder: string, index: number, fixOffset
   return result
 }
 
-function beatsToTimeMs(song: Song, beat: number): number {
+function beatsToAudioTimeMs(song: Song, beat: number): number {
   const msPerBeat = (60 * 1000) / (song.ultrastarBpm * 4)
-  return (song.gap ?? 0) + beat * msPerBeat + (song?.videoGap ?? 0) * 1000 + (song.fixOffsetMs ?? 0)
+  return (
+    (song.gapMilliseconds ?? 0) +
+    beat * msPerBeat +
+    // (song?.videoGapSeconds ?? 0) * 1000 +
+    (song.fixOffsetMs ?? 0)
+  )
 }
 
 class SongManager {
@@ -270,13 +285,13 @@ class SongManager {
   }
 
   private async _fixSong(song: Song, songOffsetMs: number): Promise<Song> {
-    await writeFile(`${song.folder}/fix-offset.txt`, songOffsetMs.toString(), 'utf-8')
+    await writeFile(`${song.folder}/offset.fix`, songOffsetMs.toString(), 'utf-8')
     return await this._refreshSong(song)
   }
 
   private async _refreshSong(song: Song): Promise<Song> {
     try {
-      const refreshedSong = await this._loadSong(song.folder, song.index, song.fixOffsetMs ?? 0)
+      const refreshedSong = await this._loadSong(song.folder, song.index)
       this._songs[song.index] = refreshedSong
       console.log(
         `Refreshed song: ${refreshedSong.title} by ${refreshedSong.artist} (id: ${refreshedSong.index})`
@@ -288,8 +303,19 @@ class SongManager {
     }
   }
 
-  private async _loadSong(folder: string, index: number, fixOffset: number): Promise<Song> {
-    const songFile = await readFile(`${folder}/song.txt`, 'utf-8')
+  private async _loadSong(folder: string, index: number): Promise<Song> {
+    // find every *.txt file in folder
+    const files = await readdir(folder, { withFileTypes: true })
+    const songFilePath = files.filter((file) => file.isFile() && file.name.endsWith('.txt'))[0]
+    if (!songFilePath) {
+      throw new Error(`No song txt file found in folder: ${folder}`)
+    }
+    const songFile = await readFile(`${folder}/${songFilePath.name}`, 'utf-8')
+    let fixOffset = 0
+    try {
+      const offsetContent = await readFile(`${folder}/offset.fix`, 'utf-8')
+      fixOffset = parseInt(offsetContent.trim())
+    } catch (_) {}
     const parsedSong = parseSongFile(songFile, folder, index, fixOffset)
     console.log(
       `Loaded song: ${parsedSong.title} by ${parsedSong.artist} (id: ${parsedSong.index})`
@@ -315,21 +341,7 @@ class SongManager {
             const song = songs[i]
             if (!song.isDirectory()) continue
             try {
-              const songFile = await readFile(`${folder}/${song.name}/song.txt`, 'utf-8')
-              let fixOffset = 0
-              try {
-                const offsetContent = await readFile(
-                  `${folder}/${song.name}/fix-offset.txt`,
-                  'utf-8'
-                )
-                fixOffset = parseInt(offsetContent.trim())
-              } catch (_) {}
-              const parsedSong = parseSongFile(
-                songFile,
-                path.join(folder, song.name),
-                songIndex,
-                fixOffset
-              )
+              const parsedSong = await this._loadSong(`${folder}/${song.name}`, songIndex)
               newSongs.push(parsedSong)
               songIndex++
               console.log(

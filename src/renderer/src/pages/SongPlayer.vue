@@ -2,14 +2,14 @@
 import PlayerPauseMenu from '@renderer/components/PlayerPauseMenu.vue'
 import SimpleKaraokeLyrics from '@renderer/components/SimpleKaraokeLyrics.vue'
 import { accessController } from '@renderer/composables/useController'
-import { useVideoPlayer } from '@renderer/composables/useVideoPlayer'
+import { useSongPlayer } from '@renderer/composables/useSongPlayer'
 import gsap from 'gsap'
 
 import { onKeyStroke } from '@vueuse/core'
 import { onMounted, onUnmounted, ref, useCssModule, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import router from '@renderer/router'
 import { accessSettings } from '@renderer/composables/useSettings'
+import router from '@renderer/router'
 
 /* songIndex is passed via route query, e.g. /song-player?songIndex=2 */
 
@@ -23,11 +23,9 @@ onMounted(() => {
 
 const { controller } = accessController()
 
-// Hotkey zum ans Ende springen fürs Debuggen
+// Jump to end for debugging
 // onKeyStroke(['End', 'e'], () => {
 //   if (player.video.value && player.duration.value > 0) {
-//     // Springe sicher an das Ende (Dauer abzüglich 2 Sekunden),
-//     // um "ended" auszulösen und den Start-Bug abzufangen.
 //     const time = player.duration.value - 2
 //     console.log('Skipping to:', time)
 //     player.seek(time)
@@ -91,31 +89,29 @@ function togglePlayPause() {
 }
 
 const $style = useCssModule()
-const player = useVideoPlayer()
+const player = useSongPlayer()
 const gsapScope = ref<null | HTMLElement>(null)
 let ctx
-watch([gsapScope, player.video], ([container, video]) => {
-  if (container && video) {
+watch([gsapScope, player.isLoaded], ([container, loaded]) => {
+  if (container && loaded) {
     ctx?.revert()
 
     ctx = gsap.context(() => {
-      video.oncanplay = () => {
-        if (!player.isPlaying.value) {
-          gsap.to(`.${$style.songArea}`, { opacity: 1, duration: 1, delay: 0.3 })
-          player.play()
-        }
-      }
-      video.onended = () => {
-        animateOut().then(() => {
-          router.push({
-            path: '/song-list',
-            query: {
-              songIndex: player.currentIndex.value
-            }
-          })
-        })
-      }
+      gsap.to(`.${$style.songArea}`, { opacity: 1, duration: 1, delay: 0.3 })
+      player.play()
     }, container)
+  }
+})
+
+watch(player.ended, async (isEnded) => {
+  if (isEnded) {
+    await animateOut()
+    router.push({
+      path: '/song-list',
+      query: {
+        songIndex: player.currentIndex.value
+      }
+    })
   }
 })
 

@@ -1,10 +1,10 @@
 import { computed, watch } from 'vue'
-import { accessVideoPlayer } from './useVideoPlayer'
+import { accessSongPlayer } from './useSongPlayer'
 import { Line } from '@shared/types'
 import { ref } from 'vue'
 
 export function useSongLyricsLogger(offsetMs = -150) {
-  const videoPlayer = accessVideoPlayer()
+  const videoPlayer = accessSongPlayer()
 
   const p1LeftLines = ref<Line[]>([])
   const p2LeftLines = ref<Line[]>([])

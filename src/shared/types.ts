@@ -24,17 +24,19 @@ export type Note =
 
 export type Song = {
   folder: string
+  usesAudio: boolean
+  usesVideo: boolean
   fixOffsetMs?: number
   index: number
   title: string
   artist: string
   audio: string
   ultrastarBpm: number
-  gap?: number
+  gapMilliseconds?: number
   cover?: string
   background?: string
   video?: string
-  videoGap?: number
+  videoGapSeconds?: number
   vocals?: string
   instrumental?: string
   genre: string[]
@@ -42,9 +44,11 @@ export type Song = {
   creator: string[]
   language: string[]
   year?: number
-  start?: number
-  end?: number
-  previewStart?: number
+  videoStartSeconds?: number
+  audioStartSeconds?: number
+  videoEndSeconds?: number
+  audioEndSeconds?: number
+  previewStartSeconds?: number
   comment?: string
   providedBy?: string
   p1?: string
