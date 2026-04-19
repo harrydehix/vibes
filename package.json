@@ -19,7 +19,8 @@
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "npm run build && electron-builder --mac",
-    "build:linux": "npm run build && electron-builder --linux"
+    "build:linux": "npm run build && electron-builder --linux",
+    "pub:mac": "npm run build && electron-builder --mac --publish always"
   },
   "dependencies": {
     "@bbc/tv-lrud-spatial": "^0.0.16",
