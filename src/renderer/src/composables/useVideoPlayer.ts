@@ -104,10 +104,22 @@ export function useVideoPlayer() {
     pausedByUser.value = true
   }
 
-  const seek = (timeInSeconds: number) => {
-    if (video.value) {
+  const seek = (timeInSeconds: number): Promise<void> => {
+    return new Promise<void>((resolve) => {
+      if (!video.value) {
+        resolve()
+        return
+      }
+
+      console.log(`Seeking to ${timeInSeconds} seconds`)
+      const onSeeked = () => {
+        video.value?.removeEventListener('seeked', onSeeked)
+        console.log('Seeked!')
+        resolve()
+      }
+      video.value.addEventListener('seeked', onSeeked)
       video.value.currentTime = timeInSeconds
-    }
+    })
   }
 
   watch(currentIndex, async (newIndex) => {

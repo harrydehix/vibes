@@ -79,7 +79,7 @@ async function handleMenuItemClick(item: (typeof menu.items)[number]) {
       player.play()
       break
     case 'restart':
-      player.seek(0)
+      await player.seek(0)
       player.play()
       break
     case 'back-to-song-list':
