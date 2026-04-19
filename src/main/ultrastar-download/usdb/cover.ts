@@ -1,6 +1,8 @@
 import { Effect } from 'effect'
 import { API_URL } from './config.js'
 
+/* Code by: https://github.com/martiinii/UltraStar-CLI */
+
 /**
  * Download song cover image bytes by id.
  * Returns null if the image is not available (non-ok response).

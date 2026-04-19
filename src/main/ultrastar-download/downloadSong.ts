@@ -10,6 +10,8 @@ import { downloadYoutubeVideoWithProgress } from './youtube/download'
 import type { YoutubeVideo } from './youtube/search'
 import { searchYoutubeVideos } from './youtube/search'
 
+/* Code by: https://github.com/martiinii/UltraStar-CLI */
+
 export type DownloadSongParams = {
   song: Song
   cookie: string

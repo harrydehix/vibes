@@ -2,6 +2,8 @@ import { spawn } from 'node:child_process'
 import { Effect } from 'effect'
 import { ytDlpManager } from '../../ipc/ytdlp'
 
+/* Code by: https://github.com/martiinii/UltraStar-CLI */
+
 export type YoutubeThumbnail = {
   url: string
   id?: string

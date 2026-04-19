@@ -2,6 +2,8 @@ import { spawn } from 'node:child_process'
 import { Effect } from 'effect'
 import { ytDlpManager } from '../../ipc/ytdlp'
 
+/* Code by: https://github.com/martiinii/UltraStar-CLI */
+
 /**
  * Check if yt-dlp is available by running `yt-dlp --version`.
  * Succeeds with true when exit code is 0; otherwise false. Never fails.

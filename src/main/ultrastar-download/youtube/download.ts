@@ -2,6 +2,8 @@ import { spawn } from 'node:child_process'
 import { Effect } from 'effect'
 import { ytDlpManager } from '../../ipc/ytdlp'
 
+/* Code by: https://github.com/martiinii/UltraStar-CLI */
+
 /**
  * Download a youtube video from direct link (watch URL or ID) and save to provided path.
  * Equivalent shell: yt-dlp -S "ext,res:1080" -o '${path}' -- ${link}

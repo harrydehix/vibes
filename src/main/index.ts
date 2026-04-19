@@ -1,5 +1,4 @@
-import { app, shell, BrowserWindow, protocol, screen, net } from 'electron'
-import { pathToFileURL } from 'url'
+import { app, shell, BrowserWindow, protocol, screen } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'

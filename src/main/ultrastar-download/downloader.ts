@@ -11,6 +11,8 @@ import { login } from './usdb/auth'
 import path, { join } from 'node:path'
 import { rm } from 'node:fs/promises'
 
+/* Code by: https://github.com/martiinii/UltraStar-CLI */
+
 let globalCookie: string | undefined
 
 /**

@@ -1,6 +1,8 @@
 import { Effect } from 'effect'
 import { API_URL } from './config.js'
 
+/* Code by: https://github.com/martiinii/UltraStar-CLI */
+
 export type Credentials = {
   user: string
   pass: string
