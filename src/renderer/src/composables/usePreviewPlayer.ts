@@ -80,6 +80,7 @@ export function usePreviewPlayer(
       vElement.addEventListener('canplay', () => {
         console.log('Video can play:', currentSong.value?.title)
         isLoading.value = false
+        video.value?.play()
       })
 
       vElement.addEventListener('ended', () => {})
@@ -121,9 +122,6 @@ export function usePreviewPlayer(
     }
   }
 
-  const enable = () => video.value?.play()
-  const disable = () => video.value?.pause()
-
   const seek = (timeInSeconds: number) => {
     if (fadeTween) fadeTween.kill()
     isFading = false
@@ -134,11 +132,7 @@ export function usePreviewPlayer(
   }
 
   watch(currentIndex, (newIndex) => {
-    const wasPlaying = isPlaying.value
     loadSong(newIndex)
-    if (wasPlaying) {
-      video.value?.play()
-    }
   })
 
   watch(
@@ -147,7 +141,6 @@ export function usePreviewPlayer(
       if (songsApi.songs.value.length > 0 && video.value) {
         console.log('Songs loaded, starting preview with index:', startIndex)
         loadSong(startIndex)
-        video.value?.play()
       }
     },
     {
@@ -166,8 +159,6 @@ export function usePreviewPlayer(
     duration,
     songs: songsApi?.songs,
     // Actions
-    enable,
-    disable,
     seek
   }
 

@@ -69,9 +69,9 @@ export function useVideoPlayer() {
     }
   })
 
-  const loadSong = (index: number) => {
+  const loadSong = (index: number): Promise<void> => {
     const song = songsApi.songs.value[index]
-    if (!song) return
+    if (!song) return Promise.resolve()
 
     console.log(`Loading song (at ${song.start ? song.start : 0}): ${song.title}`)
     isLoading.value = true
@@ -82,7 +82,17 @@ export function useVideoPlayer() {
     }
     video.value.src = accessLocalFile(song.video || song.audio)
     video.value.currentTime = song.start ? song.start : 0
+
+    const promise = new Promise<void>((resolve) => {
+      const onCanPlay = () => {
+        video.value?.removeEventListener('canplay', onCanPlay)
+        resolve()
+      }
+      video.value?.addEventListener('canplay', onCanPlay)
+      if (!video.value) resolve()
+    })
     video.value.load()
+    return promise
   }
 
   const play = () => {
@@ -100,9 +110,9 @@ export function useVideoPlayer() {
     }
   }
 
-  watch(currentIndex, (newIndex) => {
+  watch(currentIndex, async (newIndex) => {
     const wasPlaying = isPlaying.value
-    loadSong(newIndex)
+    await loadSong(newIndex)
     if (wasPlaying) {
       play()
     }
