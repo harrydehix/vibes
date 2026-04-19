@@ -16,6 +16,9 @@ Vibes provides first hand support for Windows. MacOS and Linux are also supporte
 
 If you aren't able to download any songs try to restart the application. Most of the time this fixes the problem. If that doesn't work, make sure you have yt-dlp installed and that it's in your system's PATH. You can check if yt-dlp is installed by running `yt-dlp --version` in your terminal or command prompt. If it's not installed, you can download it from the [yt-dlp GitHub repository](https://github.com/yt-dlp/yt-dlp).
 
+Problems with starting the application on mac are propably caused by my missing developer id. You have to self sign the app by using `sudo codesign --force --deep --sign "LocalCertificate" /Applications/vibes.app
+`.
+
 ### Auto updates
 
 Once installed vibes will automatically check for updates on startup and install the latest version on restart. Your currently installed version will be displayed in the start screen's bottom left corner.
