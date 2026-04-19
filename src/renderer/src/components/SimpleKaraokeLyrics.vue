@@ -14,6 +14,7 @@ const lineDivs = ref<HTMLDivElement[]>([])
 const currentActiveLineIndex = ref<number>(-1)
 const currentActiveSyllableIndex = ref<number>(-1)
 const lineHeights = ref<number[]>([])
+const lineWidths = ref<number[]>([])
 const virtualizationEnabled = ref(false)
 
 const { settings } = accessSettings()
@@ -45,13 +46,11 @@ async function adjustFontScale() {
     for (const div of lineDivs.value) {
       if (!div) continue
 
-      // Fallback: Check inner content width against the container width
       if (div.scrollWidth > maxWidth) {
         hasWrapping = true
         break
       }
 
-      // Check logical linebreaks by comparing span top offsets
       const spans = div.querySelectorAll('span')
       if (spans.length > 1) {
         const firstTop = spans[0].offsetTop
@@ -83,7 +82,12 @@ watch(
     await nextTick()
     await adjustFontScale()
     await nextTick()
-    lineHeights.value = lineDivs.value.map((div) => div?.offsetHeight || 0)
+    lineHeights.value = lineDivs.value.map((div) =>
+      div ? Math.ceil(div.getBoundingClientRect().height) : 0
+    )
+    lineWidths.value = lineDivs.value.map((div) =>
+      div ? Math.ceil(div.getBoundingClientRect().width) : 0
+    )
     virtualizationEnabled.value = true
     scrollToLine(0, false)
   },
@@ -95,7 +99,12 @@ function handleResize() {
   dynamicFontScale.value = settings.value?.lyricsFontScale ?? 1
   nextTick(async () => {
     await adjustFontScale()
-    lineHeights.value = lineDivs.value.map((div) => div?.offsetHeight || 0)
+    lineHeights.value = lineDivs.value.map((div) =>
+      div ? Math.ceil(div.getBoundingClientRect().height) : 0
+    )
+    lineWidths.value = lineDivs.value.map((div) =>
+      div ? Math.ceil(div.getBoundingClientRect().width) : 0
+    )
     virtualizationEnabled.value = true
   })
 }
@@ -267,8 +276,7 @@ onUnmounted(() => {
         :style="
           virtualizationEnabled && lineHeights[index]
             ? {
-                height: lineHeights[index] + 'px',
-                boxSizing: 'border-box',
+                containIntrinsicSize: `${lineWidths[index]}px ${lineHeights[index]}px`,
                 contentVisibility: 'auto'
               }
             : {}
@@ -339,7 +347,6 @@ onUnmounted(() => {
   opacity: 0.5;
   margin-bottom: 2rem;
   background-color: black;
-
   border-radius: 1rem;
   padding: 0 0.2rem;
   width: fit-content;
