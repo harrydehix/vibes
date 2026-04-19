@@ -139,6 +139,7 @@ function searchForSongs(search: string): {
 async function playLocalSong(song: Song) {
   if (song) {
     sound.play('click')
+    console.log('Selected local song:', song.title, 'by', song.artist)
     fadeOut(() => {
       router.push({
         path: '/song-player',

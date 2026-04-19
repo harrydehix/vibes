@@ -332,11 +332,11 @@ class SongManager {
         // loop through folder and look for songs
         const songFolders = settingsManager.settings.songFolders
 
+        let songIndex = 0
         for (const folder of songFolders) {
           // a song is always a folder and contains at least a song.txt file
           // loop through subfolders
           const songs = await readdir(folder, { withFileTypes: true, recursive: false })
-          let songIndex = 0
           for (let i = 0; i < songs.length; i++) {
             const song = songs[i]
             if (!song.isDirectory()) continue
