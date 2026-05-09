@@ -16,6 +16,9 @@ const currentActiveSyllableIndex = ref<number>(-1)
 const lineHeights = ref<number[]>([])
 const lineWidths = ref<number[]>([])
 const virtualizationEnabled = ref(false)
+const lyricsMode = ref<'scale-active-syllable' | 'highlight-left-to-right'>(
+  'highlight-left-to-right'
+)
 
 const { settings } = accessSettings()
 
@@ -151,26 +154,59 @@ function highlightSyllable(
   console.log(
     `Highlighting syllable: ${syllable.text} (line ${lineIndex}, syllable ${syllableIndex}, duration ${syllableDuration}s)`
   )
-  timeline.to(
-    syllableSpan,
-    {
-      scale: 1.1,
-      opacity: 1,
-      duration: 0.2,
-      ease: 'power2.out'
-    },
-    0
-  )
-  timeline.to(
-    syllableSpan,
-    {
-      scale: 1,
-      opacity: 0.5,
-      duration: 0.2,
-      ease: 'power2.out'
-    },
-    syllableDuration + 0.2
-  )
+
+  if (lyricsMode.value === 'scale-active-syllable') {
+    timeline.to(
+      syllableSpan,
+      {
+        scale: 1.1,
+        opacity: 1,
+        duration: 0.2,
+        ease: 'power2.out'
+      },
+      0
+    )
+    timeline.to(
+      syllableSpan,
+      {
+        scale: 1,
+        opacity: 0.5,
+        duration: 0.2,
+        ease: 'power2.out'
+      },
+      syllableDuration + 0.2
+    )
+  } else if (lyricsMode.value === 'highlight-left-to-right') {
+    timeline.to(
+      syllableSpan,
+      {
+        opacity: 1,
+        duration: 0.2,
+        ease: 'power2.out'
+      },
+      0
+    )
+    timeline.to(
+      syllableSpan,
+      {
+        scale: 1.05,
+        opacity: 1,
+        duration: 0.2,
+        ease: 'power2.out'
+      },
+      0
+    )
+    timeline.to(
+      syllableSpan,
+      {
+        scale: 1,
+        duration: 0.2,
+        ease: 'power2.out'
+      },
+      syllableDuration + 0.2
+    )
+  }
+
   timeline.play()
 }
 
@@ -210,7 +246,7 @@ function scrollToLine(index: number, activate: boolean = true) {
   if (previousLineDiv) {
     gsap.to(previousLineDiv, {
       duration: 0.3,
-      opacity: 0.5,
+      opacity: 0.3,
       ease: 'power2.out',
       overwrite: 'auto'
     })

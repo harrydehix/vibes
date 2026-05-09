@@ -4,6 +4,7 @@ import { accessBackgroundMusic } from '@renderer/composables/useBackgroundMusic'
 import { accessController } from '@renderer/composables/useController'
 import { usePreviewPlayer } from '@renderer/composables/usePreviewPlayer'
 import { useSettingsView } from '@renderer/composables/useSettingsView'
+import { accessSongs } from '@renderer/composables/useSongs'
 import { useSound } from '@renderer/composables/useSound'
 import router from '@renderer/router'
 import { accessLocalFile } from '@renderer/utils/accessLocalFile'
@@ -193,6 +194,12 @@ function openSettings() {
   play('click')
   settingsOpened.value = true
 }
+
+const { refresh } = accessSongs()
+function refreshSongs() {
+  play('click')
+  refresh()
+}
 </script>
 <template>
   <main :class="$style.main" ref="gsapScope">
@@ -202,6 +209,9 @@ function openSettings() {
         <div :class="$style.search" @click="navigateToSearch">
           <v-icon name="fa-search"></v-icon>
           Search
+        </div>
+        <div :class="$style.settings" @click="refreshSongs">
+          <v-icon name="md-refresh"></v-icon>
         </div>
         <div :class="$style.settings" @click="openSettings">
           <v-icon name="md-settingssuggest"></v-icon>

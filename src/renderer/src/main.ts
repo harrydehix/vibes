@@ -23,11 +23,13 @@ import {
   HiSolidEyeOff,
   SiStarship,
   MdShuffle,
-  IoSadSharp
+  IoSadSharp,
+  MdRefresh
 } from 'oh-vue-icons/icons'
 
 addIcons(
   MdMusicnote,
+  MdRefresh,
   MdRestartaltTwotone,
   MdQueuemusicOutlined,
   MdSettingssuggest,
