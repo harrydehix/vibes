@@ -27,7 +27,7 @@ export function useIntroMusic(
 
   onMounted(() => {
     audio.value = new Audio(introMusic)
-    audio.value.loop = false
+    audio.value.loop = true
     audio.value.volume = actualVolume.value
 
     if (autoplay) {
@@ -47,13 +47,29 @@ export function useIntroMusic(
     if (audio.value) {
       gsap.killTweensOf(audio.value)
       audio.value.volume = 0
-      audio.value.play().catch((err) => console.error('Error playing intro music:', err))
 
-      gsap.to(audio.value, {
-        volume: actualVolume.value,
-        duration: 1,
-        ease: 'power2.inOut'
-      })
+      const startAudio = () => {
+        if (!audio.value) return
+        const duration = audio.value.duration || 0
+        if (duration > 15) {
+          audio.value.currentTime = Math.random() * (duration - 15)
+        } else {
+          audio.value.currentTime = 0
+        }
+        audio.value.play().catch((err) => console.error('Error playing intro music:', err))
+
+        gsap.to(audio.value, {
+          volume: actualVolume.value,
+          duration: 1,
+          ease: 'power2.inOut'
+        })
+      }
+
+      if (audio.value.readyState >= 1) {
+        startAudio()
+      } else {
+        audio.value.addEventListener('loadedmetadata', startAudio, { once: true })
+      }
     }
   }
 

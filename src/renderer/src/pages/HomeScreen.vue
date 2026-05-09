@@ -24,7 +24,7 @@ const loading = ref(false)
 const currentAnimation = ref<gsap.core.Timeline | null>(null)
 const { songs, refresh } = accessSongs()
 
-const { play } = useSound()
+const { play, pause } = useSound()
 
 const { enable: enableBackgroundMusic } = accessBackgroundMusic()
 const settings = accessSettings()
@@ -112,6 +112,13 @@ watch(containerRef, (container) => {
         .set(`.${style.logoScreen}`, { display: 'none' })
         .addLabel('logoIntro')
         .to(`.${style.starsContainer}`, { opacity: 1, duration: 4 }, 'logoIntro+=0.5')
+        .call(
+          () => {
+            play('intro-cinematic')
+          },
+          undefined,
+          'logoIntro+=1'
+        )
         .fromTo(
           `.${style.logo} .letter`,
           { opacity: 0, scale: 0, display: 'inline-block' },
@@ -122,13 +129,29 @@ watch(containerRef, (container) => {
         .call(() => {
           animationCompleted.value = true
         })
-        .to(`.${style.logo}`, {
-          textShadow: `
-        0 0 400px #a26cff,
-        0 0 800px #a26cff,
-        0 0 30px rgba(255, 255, 255, 0.178)`,
-          duration: 2
-        })
+        .to(
+          `.${style.logoGlow}`,
+          {
+            keyframes: [
+              { opacity: 0.4, scale: 1.05, duration: 0.6, ease: 'power2.out' },
+              { opacity: 0.4, scale: 1, duration: 1.2, ease: 'power2.inOut' }
+            ]
+          },
+          'logoIntro+=1'
+        )
+        .to(
+          `.${style.logo} .letter`,
+          {
+            keyframes: [
+              { scale: 1.15, rotation: 8, duration: 0.8, ease: 'sine.inOut' },
+              { scale: 1, rotation: 0, duration: 0.8, ease: 'sine.inOut' },
+              { scale: 1, rotation: 0, duration: 5.4 }
+            ],
+            repeat: -1,
+            stagger: 0.15
+          },
+          'logoIntro+=10'
+        )
         .to(`.${style.subtitle}`, {
           opacity: 0.1,
           duration: 1.5,
@@ -260,6 +283,7 @@ const version = __APP_VERSION__
           }"
         ></div>
       </div>
+      <div :class="$style.logoGlow"></div>
       <h1 :class="$style.logo">
         <span class="letter">v</span><span class="letter">i</span><span class="letter">b</span
         ><span class="letter">e</span><span class="letter">s</span>
@@ -387,6 +411,16 @@ const version = __APP_VERSION__
   }
 }
 
+@keyframes hueCycle {
+  0%,
+  100% {
+    filter: hue-rotate(-50deg);
+  }
+  50% {
+    filter: hue-rotate(0deg);
+  }
+}
+
 .endScreen {
   display: flex;
   flex-direction: column;
@@ -402,6 +436,7 @@ const version = __APP_VERSION__
   top: 0;
   left: 0;
   z-index: 998;
+  animation: hueCycle 30s ease-in-out infinite;
 }
 
 .logo {
@@ -410,18 +445,29 @@ const version = __APP_VERSION__
   color: white;
   font-weight: 400;
   text-shadow: none;
+  z-index: 1;
 
   @media screen and (max-height: 900px) {
     font-size: 15rem;
   }
+}
 
-  @media screen and (max-height: 800px) {
-    font-size: 13rem;
-  }
-
-  @media screen and (max-height: 700px) {
-    font-size: 11rem;
-  }
+.logoGlow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 220vw;
+  height: 150vh;
+  background: radial-gradient(
+    circle,
+    rgba(162, 108, 255, 0.6) 0%,
+    rgba(130, 80, 255, 0.4) 35%,
+    transparent 70%
+  );
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
 }
 
 .subtitle {
