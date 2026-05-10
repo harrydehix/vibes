@@ -23,7 +23,7 @@ const currentRouterPath = computed(() => {
 </script>
 
 <template>
-  <update-popup v-if="currentRouterPath !== '/song-player'" />
+  <update-popup v-if="currentRouterPath === '/song-list'" />
   <router-view></router-view>
   <player-settings v-if="settingsOpened" />
 </template>
