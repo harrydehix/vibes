@@ -26,11 +26,13 @@ import {
   IoSadSharp,
   MdRefresh,
   MdKeyboarddoublearrowupRound,
-  MdExittoappOutlined
+  MdExittoappOutlined,
+  FaPlay
 } from 'oh-vue-icons/icons'
 
 addIcons(
   MdMusicnote,
+  FaPlay,
   MdRefresh,
   MdRestartaltTwotone,
   MdQueuemusicOutlined,

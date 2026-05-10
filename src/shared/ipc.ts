@@ -7,7 +7,8 @@ export const IPC_CHANNELS = {
   SONGS: {
     GET: 'songs:get',
     REFRESH: 'songs:refresh',
-    FIX_OFFSET: 'songs:fixOffset'
+    FIX_OFFSET: 'songs:fixOffset',
+    SONG_PLAYED: 'songs:songPlayed'
   },
   DIALOG: {
     OPEN_FOLDER: 'dialog:openFolder'

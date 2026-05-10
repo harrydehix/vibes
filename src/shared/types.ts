@@ -61,6 +61,13 @@ export type Song = {
     P1: Line[]
     P2?: Line[]
   }
+  meta: VibesSongMeta
+}
+
+export type VibesSongMeta = {
+  playCount: number
+  favorite: boolean
+  id: string
 }
 
 export type Line = {

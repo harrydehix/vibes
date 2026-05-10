@@ -21,17 +21,11 @@ export function useSongPlayer() {
 
   let syncRequestId: number | null = null
   let playTimeoutId: ReturnType<typeof setTimeout> | null = null
+  let currentTimeId: number | null = null
 
   // Computed Properties
   const currentSong = computed(() => songsApi.songs.value[currentIndex.value])
-  const currentTime = computed(() => {
-    if (isUsingAudio.value) {
-      return audio.value.currentTime
-    } else if (isUsingVideo.value) {
-      return video.value?.currentTime ?? 0
-    }
-    return 0
-  })
+  const currentTime = ref(0)
   const pausedByUser = computed(() => {
     return !isPlaying.value && isLoaded.value === true
   })
@@ -74,6 +68,10 @@ export function useSongPlayer() {
       cancelAnimationFrame(syncRequestId)
       syncRequestId = null
     }
+    if (currentTimeId !== null) {
+      cancelAnimationFrame(currentTimeId)
+      currentTimeId = null
+    }
     if (video.value) {
       video.value.pause()
       video.value.removeAttribute('src')
@@ -91,6 +89,10 @@ export function useSongPlayer() {
     if (syncRequestId !== null) {
       cancelAnimationFrame(syncRequestId)
       syncRequestId = null
+    }
+    if (currentTimeId !== null) {
+      cancelAnimationFrame(currentTimeId)
+      currentTimeId = null
     }
     const song = songsApi.songs.value[index]
     if (!song) return Promise.resolve()
@@ -210,6 +212,23 @@ export function useSongPlayer() {
     } else if (isUsingAudio.value) {
       audio.value.play()
     }
+
+    if (syncRequestId !== null) {
+      cancelAnimationFrame(syncRequestId)
+      syncRequestId = null
+    }
+    const updateTime = () => {
+      if (isUsingAudio.value) {
+        currentTime.value = audio.value.currentTime
+      } else if (isUsingVideo.value) {
+        currentTime.value = video.value?.currentTime ?? 0
+      }
+
+      if (isPlaying.value) {
+        currentTimeId = requestAnimationFrame(updateTime)
+      }
+    }
+    currentTimeId = requestAnimationFrame(updateTime)
     isPlaying.value = true
   }
 
@@ -221,6 +240,10 @@ export function useSongPlayer() {
     if (syncRequestId !== null) {
       cancelAnimationFrame(syncRequestId)
       syncRequestId = null
+    }
+    if (currentTimeId !== null) {
+      cancelAnimationFrame(currentTimeId)
+      currentTimeId = null
     }
     if (isUsingAudio.value) {
       audio.value.pause()

@@ -35,6 +35,9 @@ const api = {
     },
     fixOffset: async (song: Song, songOffsetMs: number): Promise<Song> => {
       return await ipcRenderer.invoke(IPC_CHANNELS.SONGS.FIX_OFFSET, song, songOffsetMs)
+    },
+    songPlayed: async (id: string): Promise<void> => {
+      return await ipcRenderer.invoke(IPC_CHANNELS.SONGS.SONG_PLAYED, id)
     }
   },
   dialog: {

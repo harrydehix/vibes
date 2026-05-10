@@ -1,6 +1,6 @@
 {
   "name": "vibes",
-  "version": "1.0.23",
+  "version": "1.0.24",
   "description": "karaoke app for personal use",
   "repository": "github:harrydehix/vibes",
   "main": "./out/main/index.js",
@@ -32,6 +32,7 @@
     "fuse.js": "^7.3.0",
     "gsap": "^3.14.2",
     "oh-vue-icons": "^1.0.0-rc3",
+    "uuid": "^14.0.0",
     "vue-router": "^5.0.4",
     "vue3-toastify": "^0.2.9"
   },

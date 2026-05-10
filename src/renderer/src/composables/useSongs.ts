@@ -12,9 +12,15 @@ export function useSongs() {
     songs.value = await window.api.songs.refresh()
   }
 
+  const songPlayed = async (song: Song) => {
+    await window.api.songs.songPlayed(song.meta.id)
+    song.meta.playCount++
+  }
+
   const songApi = {
     songs,
-    refresh
+    refresh,
+    songPlayed
   }
 
   provide('songs', songApi)

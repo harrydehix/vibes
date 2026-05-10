@@ -228,11 +228,17 @@ function refreshSongs() {
           :class="`${$style.song} ${getPositionClass(index)}`"
           @click="clickedCover(index)"
         >
-          <img
-            :src="song.cover ? accessLocalFile(song.cover) : defaultCover"
-            alt="Cover"
-            :class="$style.cover"
-          />
+          <div :class="$style.cover">
+            <img
+              :src="song.cover ? accessLocalFile(song.cover) : defaultCover"
+              alt="Cover"
+              :class="$style.coverImage"
+            />
+            <div :class="$style.playCount">
+              <v-icon name="fa-play"></v-icon>
+              {{ song.meta.playCount }}
+            </div>
+          </div>
         </div>
       </div>
       <div :class="$style.songDetails">
@@ -295,11 +301,40 @@ function refreshSongs() {
     box-sizing: border-box;
     width: 20rem;
     height: 20rem;
-    overflow: cover;
+    overflow: hidden;
 
     transition: all 0.5s ease;
     border: 1rem solid transparent;
     border-radius: 1.5rem;
+
+    .playCount {
+      position: absolute;
+      top: 1rem;
+      left: 1rem;
+      background-color: white;
+
+      color: black;
+      padding: 0.25rem 0.5rem;
+      border-radius: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      font-weight: bold;
+
+      svg {
+        width: 1rem;
+        height: 1rem;
+        fill: black;
+      }
+    }
+
+    .coverImage {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
   }
 
   &.hidden {
@@ -312,6 +347,12 @@ function refreshSongs() {
     opacity: 1;
     z-index: 3;
     transform: translateX(0) scale(1);
+
+    &:hover {
+      .playCount {
+        opacity: 1;
+      }
+    }
 
     .cover {
       border: 0.5rem solid white;

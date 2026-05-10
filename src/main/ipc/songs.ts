@@ -1,12 +1,20 @@
 import { readdir, readFile, writeFile } from 'fs/promises'
-import { Line, Note, Song } from '../../shared/types'
+import { Line, Note, Song, VibesSongMeta } from '../../shared/types'
 import { settingsManager } from './settings'
 import { ipcMain } from 'electron'
 import { IPC_CHANNELS } from '../../shared/ipc'
 import path from 'path'
+import { v4 as uuidv4 } from 'uuid'
 
-function parseSongFile(content: string, folder: string, index: number, fixOffsetMs: number): Song {
+function parseSongFile(
+  content: string,
+  folder: string,
+  index: number,
+  fixOffsetMs: number,
+  meta: VibesSongMeta
+): Song {
   const result: Song = {
+    meta,
     title: 'Untitled',
     artist: 'Unknown Artist',
     audio: '',
@@ -282,6 +290,14 @@ class SongManager {
     ipcMain.handle(IPC_CHANNELS.SONGS.FIX_OFFSET, async (_, song: Song, songOffsetMs: number) => {
       await this._fixSong(song, songOffsetMs)
     })
+
+    ipcMain.handle(IPC_CHANNELS.SONGS.SONG_PLAYED, async (_, id: string) => {
+      const song = this._songs.find((s) => s.meta.id === id)
+      if (song) {
+        song.meta.playCount++
+        await writeFile(`${song.folder}/meta.vibes`, JSON.stringify(song.meta), 'utf-8')
+      }
+    })
   }
 
   private async _fixSong(song: Song, songOffsetMs: number): Promise<Song> {
@@ -316,9 +332,23 @@ class SongManager {
       const offsetContent = await readFile(`${folder}/offset.fix`, 'utf-8')
       fixOffset = parseInt(offsetContent.trim())
     } catch (_) {}
-    const parsedSong = parseSongFile(songFile, folder, index, fixOffset)
+
+    let meta: VibesSongMeta
+    try {
+      const metaContent = await readFile(`${folder}/meta.vibes`, 'utf-8')
+      meta = JSON.parse(metaContent)
+    } catch (_) {
+      meta = { playCount: 0, favorite: false, id: uuidv4() }
+      try {
+        await writeFile(`${folder}/meta.vibes`, JSON.stringify(meta), 'utf-8')
+      } catch (error) {
+        console.warn(`Error writing meta.vibes file for song: ${folder}`, error)
+      }
+    }
+
+    const parsedSong = parseSongFile(songFile, folder, index, fixOffset, meta)
     console.log(
-      `Loaded song: ${parsedSong.title} by ${parsedSong.artist} (id: ${parsedSong.index})`
+      `Loaded song: ${parsedSong.title} by ${parsedSong.artist} (index: ${parsedSong.index}, id: ${parsedSong.meta.id})`
     )
     return parsedSong
   }
@@ -344,9 +374,6 @@ class SongManager {
               const parsedSong = await this._loadSong(`${folder}/${song.name}`, songIndex)
               newSongs.push(parsedSong)
               songIndex++
-              console.log(
-                `Loaded song: ${parsedSong.title} by ${parsedSong.artist} (id: ${parsedSong.index})`
-              )
             } catch (error) {
               console.warn(`Error loading song: ${folder}/${song.name}`, error)
             }
