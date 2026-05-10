@@ -4,6 +4,7 @@ import { accessBackgroundMusic } from '@renderer/composables/useBackgroundMusic'
 import { accessController } from '@renderer/composables/useController'
 import { usePreviewPlayer } from '@renderer/composables/usePreviewPlayer'
 import { useSettingsView } from '@renderer/composables/useSettingsView'
+import { accessSongs } from '@renderer/composables/useSongs'
 import { useSound } from '@renderer/composables/useSound'
 import router from '@renderer/router'
 import { accessLocalFile } from '@renderer/utils/accessLocalFile'
@@ -11,6 +12,7 @@ import { onKeyStroke } from '@vueuse/core'
 import gsap from 'gsap'
 import { onMounted, onUnmounted, ref, useCssModule, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import defaultCover from '@renderer/assets/cover-fallback.png'
 
 const showExitPopup = ref(false)
 onKeyStroke('Escape', () => {
@@ -193,6 +195,12 @@ function openSettings() {
   play('click')
   settingsOpened.value = true
 }
+
+const { refresh } = accessSongs()
+function refreshSongs() {
+  play('click')
+  refresh()
+}
 </script>
 <template>
   <main :class="$style.main" ref="gsapScope">
@@ -202,6 +210,9 @@ function openSettings() {
         <div :class="$style.search" @click="navigateToSearch">
           <v-icon name="fa-search"></v-icon>
           Search
+        </div>
+        <div :class="$style.settings" @click="refreshSongs">
+          <v-icon name="md-refresh"></v-icon>
         </div>
         <div :class="$style.settings" @click="openSettings">
           <v-icon name="md-settingssuggest"></v-icon>
@@ -217,7 +228,11 @@ function openSettings() {
           :class="`${$style.song} ${getPositionClass(index)}`"
           @click="clickedCover(index)"
         >
-          <img :src="song.cover && accessLocalFile(song.cover)" alt="Cover" :class="$style.cover" />
+          <img
+            :src="song.cover ? accessLocalFile(song.cover) : defaultCover"
+            alt="Cover"
+            :class="$style.cover"
+          />
         </div>
       </div>
       <div :class="$style.songDetails">

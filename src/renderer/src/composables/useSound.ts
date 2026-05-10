@@ -1,13 +1,16 @@
 import clickSound from '@renderer/assets/sounds/click.mp3'
 import hoverSound from '@renderer/assets/sounds/hover2.mp3'
-import downloadSuccess from '@renderer/assets/sounds/download-success.mp3'
+import downloadSuccessSound from '@renderer/assets/sounds/download-success.mp3'
+import introCinematicSound from '@renderer/assets/sounds/test-1.mp3'
 import { accessSettings } from './useSettings'
 import { watch } from 'vue'
+import gsap from 'gsap'
 
 const defaultSoundMap = {
   click: clickSound,
   hover: hoverSound,
-  downloadSuccess: downloadSuccess
+  downloadSuccess: downloadSuccessSound,
+  'intro-cinematic': introCinematicSound
 }
 
 export function useSound(soundMap = defaultSoundMap) {
@@ -32,17 +35,47 @@ export function useSound(soundMap = defaultSoundMap) {
     { immediate: true }
   )
 
-  const play = (type: keyof typeof defaultSoundMap) => {
+  const play = (type: keyof typeof defaultSoundMap, loop = false, fadeIn = false) => {
     const audio = audioObjects[type]
     if (!audio) {
       console.warn(`Soundtyp '${type}' wurde nicht definiert.`)
       return
     }
     audio.currentTime = 0
+    audio.loop = loop
+    if (fadeIn) {
+      audio.volume = 0
+      gsap.to(audio, {
+        volume: settings.value?.sfxVolume ?? 1,
+        duration: 0.5,
+        ease: 'power2.inOut'
+      })
+    }
     audio.play().catch((error) => {
       console.debug('Failed to play sound (often due to autoplay restrictions):', error)
     })
   }
 
-  return { play }
+  const pause = (type: keyof typeof defaultSoundMap, fadeOut = false) => {
+    const audio = audioObjects[type]
+    // fade out audio using gsap
+    if (audio) {
+      if (fadeOut) {
+        gsap.to(audio, {
+          volume: 0,
+          duration: 0.5,
+          onComplete: () => {
+            audio.pause()
+            audio.currentTime = 0
+            audio.volume = settings.value?.sfxVolume ?? 1
+          }
+        })
+      } else {
+        audio.pause()
+        audio.currentTime = 0
+      }
+    }
+  }
+
+  return { play, pause }
 }

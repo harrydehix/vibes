@@ -12,6 +12,7 @@ import LoadingSpinner from '@renderer/components/LoadingSpinner.vue'
 import { useRoute } from 'vue-router'
 import { DownloadState, useDownloader } from '@renderer/composables/useDownloader'
 import { onKeyStroke } from '@vueuse/core'
+import defaultCover from '@renderer/assets/cover-fallback.png'
 
 const { songs, refresh } = accessSongs()
 const $style = useCssModule()
@@ -305,7 +306,10 @@ watch(
                     :class="$style.localSongResult"
                     @click="playLocalSong(song)"
                   >
-                    <img :src="accessLocalFile(song.cover!)" alt="thumbnail" />
+                    <img
+                      :src="song.cover ? accessLocalFile(song.cover) : defaultCover"
+                      alt="thumbnail"
+                    />
                     <div :class="$style.songInfo">
                       <div :class="$style.songTitle">{{ song.title }}</div>
                       <div :class="$style.songArtist">{{ song.artist }}</div>
