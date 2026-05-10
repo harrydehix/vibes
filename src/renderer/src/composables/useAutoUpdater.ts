@@ -1,5 +1,5 @@
-import { ProgressInfo, UpdateInfo } from 'electron-updater'
-import { inject, onMounted, onUnmounted, ref } from 'vue'
+import type { ProgressInfo, UpdateInfo } from 'electron-updater'
+import { inject, onMounted, onUnmounted, provide, ref } from 'vue'
 
 export function useAutoUpdater() {
   const progress = ref<ProgressInfo | null>(null)
@@ -35,7 +35,7 @@ export function useAutoUpdater() {
     installUpdate: () => window.api.updater.install()
   }
 
-  inject('autoUpdater', autoUpdaterApi)
+  provide('autoUpdater', autoUpdaterApi)
 
   return autoUpdaterApi
 }

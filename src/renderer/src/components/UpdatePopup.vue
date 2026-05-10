@@ -42,6 +42,7 @@ function installNow() {
       <a
         :href="`https://github.com/harrydehix/vibes/releases/tag/v${autoUpdater.updateInfo.value?.version}`"
         target="_blank"
+        rel="noopener noreferrer"
         >here</a
       >.
     </p>

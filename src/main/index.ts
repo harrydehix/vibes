@@ -64,7 +64,7 @@ function createWindow(): void {
   }
 }
 
-function checkForUpdates() {
+function definesUpdateIpcHandles() {
   if (is.dev) {
     autoUpdater.forceDevUpdateConfig = true
   }
@@ -89,8 +89,6 @@ function checkForUpdates() {
       mainWindow.webContents.send(IPC_CHANNELS.APP_UPDATE.DOWNLOADED, update)
     }
   })
-
-  autoUpdater.checkForUpdatesAndNotify()
 }
 
 async function init() {
@@ -99,8 +97,9 @@ async function init() {
   await songManager.defineIpcHandles()
   dialogManager.defineIpcHandles()
   await downloaderManager.defineIpcHandles()
-  checkForUpdates()
+  definesUpdateIpcHandles()
   createWindow()
+  autoUpdater.checkForUpdatesAndNotify()
 }
 
 protocol.registerSchemesAsPrivileged([

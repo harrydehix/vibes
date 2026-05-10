@@ -11,7 +11,7 @@ import {
   UsdbSong
 } from '../shared/types'
 import { IPC_CHANNELS } from '../shared/ipc'
-import { ProgressInfo, UpdateInfo } from 'electron-updater'
+import type { ProgressInfo, UpdateInfo } from 'electron-updater'
 
 // Custom APIs for renderer
 const api = {
