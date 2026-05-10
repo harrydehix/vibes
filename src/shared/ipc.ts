@@ -16,5 +16,10 @@ export const IPC_CHANNELS = {
     SEARCH: 'downloader:search',
     DOWNLOAD: 'downloader:download',
     PROGRESS: 'downloader:progress'
+  },
+  APP_UPDATE: {
+    PROGRESS: 'app-update:progress',
+    DOWNLOADED: 'app-update:downloaded',
+    INSTALL: 'app-update:install'
   }
 } as const

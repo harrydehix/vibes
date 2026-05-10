@@ -11,6 +11,7 @@ import {
   UsdbSong
 } from '../shared/types'
 import { IPC_CHANNELS } from '../shared/ipc'
+import { ProgressInfo, UpdateInfo } from 'electron-updater'
 
 // Custom APIs for renderer
 const api = {
@@ -51,12 +52,35 @@ const api = {
       return await ipcRenderer.invoke(IPC_CHANNELS.DOWNLOADER.DOWNLOAD, params)
     },
     onProgress: (callback: (song: UsdbSong, progress: number) => void) => {
-      const listener = (_event: any, song: UsdbSong, progress: number) => {
+      const listener = (_event: Electron.IpcRendererEvent, song: UsdbSong, progress: number) => {
         callback(song, progress)
       }
       ipcRenderer.on(IPC_CHANNELS.DOWNLOADER.PROGRESS, listener)
       return () => {
         ipcRenderer.removeListener(IPC_CHANNELS.DOWNLOADER.PROGRESS, listener)
+      }
+    }
+  },
+  updater: {
+    install: async (): Promise<void> => {
+      return await ipcRenderer.invoke(IPC_CHANNELS.APP_UPDATE.INSTALL)
+    },
+    onProgress: (callback: (progress: ProgressInfo) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, progress: ProgressInfo) => {
+        callback(progress)
+      }
+      ipcRenderer.on(IPC_CHANNELS.APP_UPDATE.PROGRESS, listener)
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.APP_UPDATE.PROGRESS, listener)
+      }
+    },
+    onDownloaded: (callback: (update: UpdateInfo) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, update: UpdateInfo) => {
+        callback(update)
+      }
+      ipcRenderer.on(IPC_CHANNELS.APP_UPDATE.DOWNLOADED, listener)
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.APP_UPDATE.DOWNLOADED, listener)
       }
     }
   }

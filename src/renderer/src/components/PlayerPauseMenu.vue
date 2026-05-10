@@ -9,6 +9,7 @@ import router from '@renderer/router'
 import { onKeyStroke } from '@vueuse/core'
 import { useSettingsView } from '@renderer/composables/useSettingsView'
 import { formatDuration } from '@renderer/utils/formatDuration'
+import defaultCover from '@renderer/assets/cover-fallback.png'
 
 const props = defineProps<{
   animationBeforeLeave: () => Promise<void>
@@ -117,7 +118,14 @@ const backgroundMusic = accessBackgroundMusic()
       Paused
     </div>
     <div :class="$style.songInfo">
-      <img :src="accessLocalFile(player.currentSong.value?.cover!)" alt="Thumbnail" />
+      <img
+        :src="
+          player.currentSong.value?.cover
+            ? accessLocalFile(player.currentSong.value.cover)
+            : defaultCover
+        "
+        alt="Thumbnail"
+      />
       <div :class="$style.songDetails">
         <h2>{{ player.currentSong.value?.title }}</h2>
         <h3>{{ player.currentSong.value?.artist }}</h3>

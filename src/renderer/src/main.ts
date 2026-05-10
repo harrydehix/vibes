@@ -24,7 +24,9 @@ import {
   SiStarship,
   MdShuffle,
   IoSadSharp,
-  MdRefresh
+  MdRefresh,
+  MdKeyboarddoublearrowupRound,
+  MdExittoappOutlined
 } from 'oh-vue-icons/icons'
 
 addIcons(
@@ -47,7 +49,9 @@ addIcons(
   HiSolidEyeOff,
   SiStarship,
   MdShuffle,
-  IoSadSharp
+  IoSadSharp,
+  MdKeyboarddoublearrowupRound,
+  MdExittoappOutlined
 )
 
 createApp(App).use(router).component('v-icon', OhVueIcon).mount('#app')

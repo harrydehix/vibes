@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, protocol, screen } from 'electron'
+import { app, shell, BrowserWindow, protocol, screen, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
@@ -9,6 +9,7 @@ import { dialogManager } from './ipc/dialogs'
 import { downloaderManager } from './ipc/downloaderManager'
 import { existsSync } from 'fs'
 import { ytDlpManager } from './ipc/ytdlp'
+import { IPC_CHANNELS } from '../shared/ipc'
 
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 app.commandLine.appendSwitch('disable-features', 'AudioServiceOutOfProcess')
@@ -63,30 +64,43 @@ function createWindow(): void {
   }
 }
 
+function checkForUpdates() {
+  if (is.dev) {
+    autoUpdater.forceDevUpdateConfig = true
+  }
+
+  autoUpdater.disableWebInstaller = true
+
+  ipcMain.handle(IPC_CHANNELS.APP_UPDATE.INSTALL, () => {
+    console.log('Installing update and restarting app...')
+    autoUpdater.quitAndInstall(false, true)
+  })
+
+  autoUpdater.on('download-progress', (progress) => {
+    const mainWindow = BrowserWindow.getAllWindows()[0]
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(IPC_CHANNELS.APP_UPDATE.PROGRESS, progress)
+    }
+  })
+
+  autoUpdater.on('update-downloaded', (update) => {
+    const mainWindow = BrowserWindow.getAllWindows()[0]
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(IPC_CHANNELS.APP_UPDATE.DOWNLOADED, update)
+    }
+  })
+
+  autoUpdater.checkForUpdatesAndNotify()
+}
+
 async function init() {
   await ytDlpManager.init()
   await settingsManager.defineIpcHandles()
   await songManager.defineIpcHandles()
   dialogManager.defineIpcHandles()
   await downloaderManager.defineIpcHandles()
+  checkForUpdates()
   createWindow()
-
-  // Erlaubt das Testen des Updaters aus der Entwicklungsumgebung heraus
-  if (is.dev) {
-    autoUpdater.forceDevUpdateConfig = true
-  }
-
-  // Deaktiviere Web-Installer & Blockmaps (für Voll-Downloads statt Delta-Updates)
-  autoUpdater.disableWebInstaller = true
-
-  autoUpdater.on('download-progress', (progress) => {
-    // Sende Fortschrittsinformationen an den Renderer
-    BrowserWindow.getAllWindows().forEach((_) => {
-      console.log(`Download progress: ${progress.percent}%`)
-    })
-  })
-
-  autoUpdater.checkForUpdatesAndNotify()
 }
 
 protocol.registerSchemesAsPrivileged([

@@ -12,6 +12,7 @@ import { onKeyStroke } from '@vueuse/core'
 import gsap from 'gsap'
 import { onMounted, onUnmounted, ref, useCssModule, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import defaultCover from '@renderer/assets/cover-fallback.png'
 
 const showExitPopup = ref(false)
 onKeyStroke('Escape', () => {
@@ -227,7 +228,11 @@ function refreshSongs() {
           :class="`${$style.song} ${getPositionClass(index)}`"
           @click="clickedCover(index)"
         >
-          <img :src="song.cover && accessLocalFile(song.cover)" alt="Cover" :class="$style.cover" />
+          <img
+            :src="song.cover ? accessLocalFile(song.cover) : defaultCover"
+            alt="Cover"
+            :class="$style.cover"
+          />
         </div>
       </div>
       <div :class="$style.songDetails">

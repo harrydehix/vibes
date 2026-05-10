@@ -80,7 +80,7 @@ export function useIntroMusic(
 
       gsap.to(audio.value, {
         volume: 0,
-        duration: 1,
+        duration: 3,
         ease: 'power2.inOut',
         onComplete: () => {
           if (audio.value) {
