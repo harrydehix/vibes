@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import LoadingSpinner from '@renderer/components/LoadingSpinner.vue'
-import { accessBackgroundMusic } from '@renderer/composables/useBackgroundMusic'
 import { accessController } from '@renderer/composables/useController'
 import { accessSongs } from '@renderer/composables/useSongs'
 import { useSound } from '@renderer/composables/useSound'
@@ -24,9 +23,8 @@ const loading = ref(false)
 const currentAnimation = ref<gsap.core.Timeline | null>(null)
 const { songs, refresh } = accessSongs()
 
-const { play, pause } = useSound()
+const { play } = useSound()
 
-const { enable: enableBackgroundMusic } = accessBackgroundMusic()
 const settings = accessSettings()
 const { enable: enableIntroMusic, disable: disableIntroMusic } = useIntroMusic(false, settings)
 
