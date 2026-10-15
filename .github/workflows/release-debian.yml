@@ -24,7 +24,7 @@ jobs:
         run: npm ci
 
       - name: Build Linux App
-        run: npm run build && npx electron-builder --linux --x64 --arm64 --armv7l -p never
+        run: npm run build && npx electron-builder --linux --x64 --arm64 -p never
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
