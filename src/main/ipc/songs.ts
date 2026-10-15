@@ -305,8 +305,8 @@ class SongManager {
       }
     )
 
-    ipcMain.handle(IPC_CHANNELS.SONGS.FIX_OFFSET, async (_, song: Song, songOffsetMs: number) => {
-      await this._fixSong(song, songOffsetMs)
+    ipcMain.handle(IPC_CHANNELS.SONGS.FIX_OFFSET, async (_, id: string, songOffsetMs: number) => {
+      return await this._fixSong(id, songOffsetMs)
     })
 
     ipcMain.handle(IPC_CHANNELS.SONGS.SONG_PLAYED, async (_, id: string) => {
@@ -343,23 +343,18 @@ class SongManager {
       .map((entry, index) => ({ ...entry, index }))
   }
 
-  private async _fixSong(song: Song, songOffsetMs: number): Promise<Song> {
-    await writeFile(`${song.folder}/offset.fix`, songOffsetMs.toString(), 'utf-8')
-    return await this._refreshSong(song)
-  }
-
-  private async _refreshSong(song: Song): Promise<Song> {
-    try {
-      const refreshedSong = await this._loadSong(song.folder, song.index)
-      this._songs[song.index] = refreshedSong
-      console.log(
-        `Refreshed song: ${refreshedSong.title} by ${refreshedSong.artist} (id: ${refreshedSong.index})`
-      )
-      return refreshedSong
-    } catch (error) {
-      console.warn(`Error refreshing song: ${song.folder}`, error)
-      return song
+  private async _fixSong(id: string, songOffsetMs: number): Promise<void> {
+    if (typeof id !== 'string' || !id) throw new Error('A song ID is required')
+    if (!Number.isFinite(songOffsetMs)) {
+      throw new Error('The song offset must be a finite number of milliseconds')
     }
+    if (this._refreshPromise) await this._refreshPromise
+    const matches = this._songs.filter((entry) => entry.meta.id === id)
+    if (matches.length !== 1) throw new Error('The song could not be uniquely identified')
+    const existing = matches[0]
+    const meta = { ...existing.meta, fixOffsetMs: songOffsetMs }
+    await writeFile(path.join(existing.folder, 'meta.vibes'), JSON.stringify(meta), 'utf-8')
+    existing.meta.fixOffsetMs = songOffsetMs
   }
 
   private async _loadSong(folder: string, index: number): Promise<Song> {
@@ -392,6 +387,10 @@ class SongManager {
       } catch (error) {
         console.warn(`Error writing meta.vibes file for song: ${folder}`, error)
       }
+    }
+
+    if (typeof meta.fixOffsetMs === 'number' && Number.isFinite(meta.fixOffsetMs)) {
+      fixOffset = meta.fixOffsetMs
     }
 
     const parsedSong = manifestFile

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { accessSettings } from '@renderer/composables/useSettings'
 import { accessSongPlayer } from '@renderer/composables/useSongPlayer'
+import { getLyricsRows, type LyricsRow } from '@renderer/utils/singingPauses'
 import type { Line } from '@shared/types'
 import { gsap } from 'gsap'
 import { computed, onMounted, onUnmounted, ref, watch, nextTick } from 'vue'
@@ -20,6 +21,8 @@ const virtualizationEnabled = ref(false)
 const lyricsMode = ref<'scale-active-syllable' | 'highlight-left-to-right'>(
   'highlight-left-to-right'
 )
+const syllableTimelines = new Set<gsap.core.Timeline>()
+let lastMediaTimeMs: number | null = null
 
 const { settings } = accessSettings()
 
@@ -35,6 +38,26 @@ const lines = computed(() => {
   const song = videoPlayer.currentSong.value
   return song?.lines || { P1: [], P2: [] }
 })
+
+const playbackTimeMs = ref(0)
+const lyricsRows = computed(() => getLyricsRows(lines.value.P1))
+
+function pauseProgress(row: LyricsRow): number {
+  return Math.max(
+    0,
+    Math.min(1, (playbackTimeMs.value - row.startTimeMs) / (row.endTimeMs - row.startTimeMs))
+  )
+}
+
+function resetSyllableHighlights(): void {
+  for (const timeline of syllableTimelines) timeline.kill()
+  syllableTimelines.clear()
+  const spans = lineDivs.value.flatMap((div) =>
+    div ? Array.from(div.querySelectorAll('span')) : []
+  )
+  if (spans.length) gsap.set(spans, { clearProps: 'opacity,transform' })
+  currentActiveSyllableIndex.value = -1
+}
 
 const dynamicFontScale = ref(settings.value?.lyricsFontScale ?? 1)
 
@@ -93,7 +116,7 @@ watch(
       div ? Math.ceil(div.getBoundingClientRect().width) : 0
     )
     virtualizationEnabled.value = true
-    scrollToLine(0, false)
+    scrollToLine(Math.max(0, currentActiveLineIndex.value), false)
   },
   { immediate: true, deep: true }
 )
@@ -110,6 +133,7 @@ function handleResize() {
       div ? Math.ceil(div.getBoundingClientRect().width) : 0
     )
     virtualizationEnabled.value = true
+    scrollToLine(Math.max(0, currentActiveLineIndex.value), false)
   })
 }
 
@@ -125,18 +149,30 @@ watch(
 
 const syncTimeline = () => {
   if (videoPlayer.video.value) {
-    const offsetMs = -(settings.value?.syncOffsetMs ?? -200)
-    const time = videoPlayer.getCurrentTime() * 1000 + offsetMs
+    const mediaTimeMs = videoPlayer.getCurrentTime() * 1000
+    if (lastMediaTimeMs !== null && mediaTimeMs < lastMediaTimeMs) {
+      resetSyllableHighlights()
+      currentActiveLineIndex.value = -1
+    }
+    lastMediaTimeMs = mediaTimeMs
+    const storedOffsetMs = videoPlayer.currentSong.value?.fixOffsetMs ?? 0
+    const previewOffsetMs = videoPlayer.songOffsetPreviewMs.value ?? storedOffsetMs
+    const offsetMs = -(settings.value?.syncOffsetMs ?? -200) - (previewOffsetMs - storedOffsetMs)
+    const time = mediaTimeMs + offsetMs
+    // Use the lyrics clock so pause, seeking and sync-offset changes cannot drift.
+    playbackTimeMs.value = time
 
-    const activeLineIndex = lines.value.P1.findIndex(
-      (item) => time >= item.startTimeMs && time <= item.endTimeMs
+    const activeLineIndex = lyricsRows.value.findIndex(
+      (item) => time >= item.startTimeMs && time < item.endTimeMs
     )
 
     const newLine = scrollToLine(activeLineIndex)
-    if (newLine) {
-      console.log(`P1: ${lines.value.P1[activeLineIndex]?.syllables.map((s) => s.text).join('')}`)
+    const activeRow = lyricsRows.value[activeLineIndex]
+    if (newLine && activeRow?.kind === 'lyrics') {
+      console.log(`P1: ${activeRow.syllables.map((syllable) => syllable.text).join('')}`)
     }
-    if (!phraseTiming.value) activeSyllableEffect(activeLineIndex, time, newLine)
+    if (!phraseTiming.value && activeRow?.kind === 'lyrics')
+      activeSyllableEffect(activeLineIndex, time, newLine)
   }
 }
 
@@ -151,7 +187,13 @@ function highlightSyllable(
   if (!syllableSpan) return
 
   const syllableDuration = (syllable.endTimeMs - syllable.startTimeMs) / 1000
-  const timeline = gsap.timeline({ paused: true })
+  const timeline = gsap.timeline({
+    paused: true,
+    onComplete: () => {
+      syllableTimelines.delete(timeline)
+    }
+  })
+  syllableTimelines.add(timeline)
   console.log(
     `Highlighting syllable: ${syllable.text} (line ${lineIndex}, syllable ${syllableIndex}, duration ${syllableDuration}s)`
   )
@@ -213,9 +255,10 @@ function highlightSyllable(
 
 function activeSyllableEffect(lineIndex: number, timeMs: number, newLine: boolean) {
   // The active syllable should pop up slightly and then return to normal size
-  const line = lines.value.P1[lineIndex]
-  const previousLine = lines.value.P1[lineIndex - 1]
-  if (!line) return
+  const line = lyricsRows.value[lineIndex]
+  const previousRow = lyricsRows.value[lineIndex - 1]
+  const previousLine = previousRow?.kind === 'lyrics' ? previousRow : undefined
+  if (!line || line.kind !== 'lyrics') return
   const syllable = line.syllables.find((s) => timeMs >= s.startTimeMs && timeMs <= s.endTimeMs)
   if (!syllable) return
   const syllableIndex = line.syllables.indexOf(syllable)
@@ -247,16 +290,7 @@ function activeSyllableEffect(lineIndex: number, timeMs: number, newLine: boolea
 function scrollToLine(index: number, activate: boolean = true) {
   const previousLineIndex = currentActiveLineIndex.value
   if (activate && previousLineIndex === index) return false
-  const previousLineDiv = lineDivs.value[previousLineIndex]
-  currentActiveLineIndex.value = index
-  if (previousLineDiv) {
-    gsap.to(previousLineDiv, {
-      duration: 0.3,
-      opacity: 0.3,
-      ease: 'power2.out',
-      overwrite: 'auto'
-    })
-  }
+  if (activate) currentActiveLineIndex.value = index
 
   if (index === -1) {
     return false
@@ -269,14 +303,6 @@ function scrollToLine(index: number, activate: boolean = true) {
     const lineCenter = lineDiv.clientHeight / 2
 
     const targetY = containerCenter - (lineTop + lineCenter)
-    if (activate) {
-      gsap.to(lineDiv, {
-        duration: 0.3,
-        opacity: 1,
-        ease: 'power2.out',
-        overwrite: 'auto'
-      })
-    }
     gsap.to(trackRef.value, {
       y: targetY,
       duration: 0.3,
@@ -295,6 +321,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   gsap.ticker.remove(syncTimeline)
+  resetSyllableHighlights()
   if (ctx) {
     ctx.revert()
   }
@@ -309,32 +336,53 @@ onUnmounted(() => {
   <div ref="containerRef" :class="`${$style.lyricsContainer}`">
     <div
       ref="trackRef"
-      :class="$style.track"
+      :class="[$style.track, { [$style.centered]: settings?.lyricsAlignment === 'center' }]"
       :style="{
         fontSize: `${dynamicFontScale * 3}rem`
       }"
     >
       <div
-        v-for="(line, index) in lines.P1"
+        v-for="(row, index) in lyricsRows"
         :key="videoPlayer.currentSong.value.index + '-' + index"
         :ref="(el) => (lineDivs[index] = el as any)"
-        :class="`${$style.lyricsLine} ${phraseTiming ? $style.phrase : ''} ${settings?.highContrastMode && videoPlayer.isUsingVideo.value ? $style.contrast : ''} ${!settings?.lowPerformanceMode ? $style.highPerformance : ''}`"
-        :style="
-          virtualizationEnabled && lineHeights[index]
+        :class="`${$style.lyricsLine} ${row.kind === 'pause' ? $style.pauseCue : phraseTiming ? $style.phrase : ''} ${settings?.highContrastMode && videoPlayer.isUsingVideo.value ? $style.contrast : ''} ${!settings?.lowPerformanceMode ? $style.highPerformance : ''}`"
+        :data-active="index === currentActiveLineIndex"
+        :role="row.kind === 'pause' ? 'progressbar' : undefined"
+        :aria-label="row.kind === 'pause' ? 'Time until singing' : undefined"
+        :aria-valuemin="row.kind === 'pause' ? 0 : undefined"
+        :aria-valuemax="row.kind === 'pause' ? 100 : undefined"
+        :aria-valuenow="row.kind === 'pause' ? Math.round(pauseProgress(row) * 100) : undefined"
+        :aria-valuetext="
+          row.kind === 'pause'
+            ? `Singing in ${Math.max(0, Math.ceil((row.endTimeMs - playbackTimeMs) / 1000))} seconds`
+            : undefined
+        "
+        :style="{
+          ...(virtualizationEnabled && lineHeights[index]
             ? {
                 containIntrinsicSize: `${lineWidths[index]}px ${lineHeights[index]}px`,
                 contentVisibility: 'auto'
               }
-            : {}
-        "
+            : {}),
+          '--pause-fill': row.kind === 'pause' ? `${pauseProgress(row) * 100}%` : undefined
+        }"
       >
-        <div :class="$style.inner">
+        <template v-if="row.kind === 'pause'">
+          <div :class="$style.pauseBackground" aria-hidden="true"></div>
+          <v-icon name="md-musicnote" :class="$style.pauseNote" aria-hidden="true" />
+          <v-icon
+            name="md-musicnote"
+            :class="`${$style.pauseNote} ${$style.pauseFill}`"
+            aria-hidden="true"
+          />
+        </template>
+        <div v-else :class="$style.inner">
           <span v-if="phraseTiming">{{
-            line.syllables.map((syllable) => syllable.text).join('')
+            row.syllables.map((syllable) => syllable.text).join('')
           }}</span>
           <template v-else>
             <span
-              v-for="(syllable, syllableIndex) in line.syllables"
+              v-for="(syllable, syllableIndex) in row.syllables"
               :key="syllable.text + syllableIndex"
               >{{ syllable.text }}</span
             >
@@ -388,19 +436,65 @@ onUnmounted(() => {
 .track {
   position: relative;
   font-size: 3rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+
+  &.centered {
+    align-items: center;
+    text-align: center;
+  }
+}
+
+.lyricsLine.pauseCue {
+  position: relative;
+  width: 8rem;
+  height: 5.5rem;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background-color: black;
+  border-radius: 1rem;
+  pointer-events: none;
+}
+
+.pauseBackground {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--pause-fill);
+  background-color: rgba(165, 105, 234, 0.25);
+}
+
+.pauseNote {
+  grid-area: 1 / 1;
+  width: 4rem;
+  height: 4rem;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.pauseFill {
+  color: #a169ea;
+  clip-path: inset(0 calc(100% - var(--pause-fill)) 0 0);
 }
 
 .lyricsLine {
   font-family: 'Outfit', sans-serif;
   font-weight: 700;
   color: white;
-  text-align: center;
+  text-align: inherit;
   opacity: 0.5;
+  transition: opacity 0.3s;
   margin-bottom: 2rem;
   background-color: black;
   border-radius: 1rem;
   padding: 0 0.2rem;
   width: fit-content;
+  &[data-active='true'] {
+    opacity: 1;
+  }
   &.highPerformance {
     text-shadow:
       0 0 5px rgba(255, 255, 255, 0.8),

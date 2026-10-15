@@ -11,6 +11,62 @@ import { parseSongManifest } from '../src/main/song-import/manifest.ts'
 import type { Song, SongDeleteResponse } from '../src/shared/types.ts'
 import { createSongDeletionFixture, folder, meta, manifest } from './fixtures.ts'
 
+test('song offsets persist in metadata, replace old corrections and survive reloading without doubling', async (context) => {
+  const fixture = await createSongDeletionFixture(context)
+  const song = await fixture.addSong(path.join(fixture.root, 'offset-song'), 'offset-song')
+  await writeFile(path.join(song.folder, 'song.vibes.json'), JSON.stringify(manifest()))
+  await writeFile(path.join(song.folder, 'meta.vibes'), JSON.stringify(song.meta))
+  await writeFile(path.join(song.folder, 'offset.fix'), '250')
+  const [loaded] = await fixture.refreshSongs()
+  assert.equal(loaded.fixOffsetMs, 250)
+  const initialStart = loaded.lines.P1[0].startTimeMs
+  const initialLines = loaded.lines
+  await fixture.fixOffset({ ...loaded, folder: fixture.base, index: 99 }, -125)
+  assert.equal(fixture.manager.songs[0], loaded)
+  assert.equal(loaded.fixOffsetMs, 250)
+  assert.equal(loaded.lines, initialLines)
+  assert.equal(loaded.lines.P1[0].startTimeMs, initialStart)
+  assert.equal(loaded.lines.P1[0].syllables[0].startTimeMs, initialStart)
+  const savedMeta = JSON.parse(await readFile(path.join(song.folder, 'meta.vibes'), 'utf8'))
+  assert.equal(savedMeta.fixOffsetMs, -125)
+  assert.equal(savedMeta.id, song.meta.id)
+  assert.equal(savedMeta.playCount, song.meta.playCount)
+  assert.equal(savedMeta.favorite, song.meta.favorite)
+  assert.equal(existsSync(path.join(fixture.base, 'meta.vibes')), false)
+  await fixture.songPlayed(song.meta.id)
+  const playedMeta = JSON.parse(await readFile(path.join(song.folder, 'meta.vibes'), 'utf8'))
+  assert.equal(playedMeta.fixOffsetMs, -125)
+  assert.equal(playedMeta.playCount, song.meta.playCount + 1)
+  const [reloaded] = await fixture.refreshSongs()
+  assert.equal(reloaded.fixOffsetMs, -125)
+  assert.equal(reloaded.lines.P1[0].startTimeMs, initialStart - 375)
+  await fixture.fixOffset(reloaded, 0)
+  const [reset] = await fixture.refreshSongs()
+  assert.equal(reset.fixOffsetMs, 0)
+  assert.equal(reset.lines.P1[0].startTimeMs, initialStart - 250)
+  await fixture.fixOffset(reset, 12.5)
+  const [fractional] = await fixture.refreshSongs()
+  assert.equal(fractional.fixOffsetMs, 12.5)
+  assert.equal(fractional.lines.P1[0].startTimeMs, initialStart - 237.5)
+})
+
+test('song offsets reject invalid numbers and identities and preserve cached lyrics on save failures', async (context) => {
+  const fixture = await createSongDeletionFixture(context)
+  const song = await fixture.addSong(path.join(fixture.root, 'song'), 'song')
+  for (const offset of [NaN, Infinity, -Infinity, '100', null]) {
+    await assert.rejects(fixture.fixOffset(song, offset), /finite number/)
+  }
+  await assert.rejects(
+    fixture.fixOffset({ ...song, meta: { ...song.meta, id: 'unknown' } }, 100),
+    /uniquely identified/
+  )
+  fixture.failWith(new Error('Disk write failed'))
+  await assert.rejects(fixture.fixOffset(song, 100), /Disk write failed/)
+  assert.equal(fixture.manager.songs[0], song)
+  assert.equal(song.fixOffsetMs, 0)
+  assert.equal(existsSync(path.join(song.folder, 'meta.vibes')), false)
+})
+
 test('song deletion removes the complete song folder and reindexes the remaining library', async (context) => {
   const fixture = await createSongDeletionFixture(context)
   const first = await fixture.addSong(path.join(fixture.root, 'first'), 'first')
@@ -90,6 +146,44 @@ test('song deletion preserves the library on disk errors and rejects duplicate s
   assert.equal((await fixture.deleteSong(song.meta.id)).ok, false)
   assert.equal(existsSync(song.folder), true)
   assert.equal(existsSync(duplicate.folder), true)
+})
+
+test('saving a song offset only persists the file without changing the shared lyrics or media', async () => {
+  const song = parseSongManifest(JSON.stringify(manifest()), folder, 0, 0, meta)
+  const module = loadTestModule(
+    await readFile(new URL('../src/renderer/src/composables/useSongs.ts', import.meta.url), 'utf8'),
+    { vue: { ref, provide: () => undefined, onMounted: () => undefined } },
+    {
+      window: {
+        api: {
+          songs: {
+            fixOffset: async (received: string, offset: number) => {
+              assert.equal(received, song.meta.id)
+              assert.equal(offset, 100)
+            }
+          }
+        }
+      }
+    }
+  ) as {
+    useSongs(): {
+      songs: ReturnType<typeof ref<Song[]>>
+      fixOffset(song: Song, offset: number): Promise<void>
+    }
+  }
+  const api = module.useSongs()
+  api.songs.value = [song]
+  const library = api.songs.value
+  const playing = api.songs.value[0]
+  const lines = playing.lines
+  await api.fixOffset(playing, 100)
+  assert.equal(api.songs.value, library)
+  assert.equal(api.songs.value[0], playing)
+  assert.equal(playing.video, song.video)
+  assert.equal(playing.audio, song.audio)
+  assert.equal(playing.lines, lines)
+  assert.equal(playing.fixOffsetMs, 0)
+  assert.equal(playing.meta.fixOffsetMs, undefined)
 })
 
 test('shared song library sends only the song ID and changes only after successful deletion', async () => {

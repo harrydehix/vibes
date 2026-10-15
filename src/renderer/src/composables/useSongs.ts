@@ -23,10 +23,15 @@ export function useSongs() {
     song.meta.playCount++
   }
 
+  const fixOffset = async (song: Song, offsetMs: number): Promise<void> => {
+    await window.api.songs.fixOffset(song.meta.id, offsetMs)
+  }
+
   const songApi = {
     songs,
     refresh,
     deleteSong,
+    fixOffset,
     songPlayed
   }
 

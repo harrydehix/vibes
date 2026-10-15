@@ -7,7 +7,7 @@ import * as vue from 'vue'
 import type { Component } from 'vue'
 import type { Song, SongDeleteResponse } from '../src/shared/types.ts'
 import * as captionTracks from '../src/shared/captionTracks.ts'
-import { loadTestModule } from './helpers.ts'
+import { loadTestModule, loadVueComponent } from './helpers.ts'
 import { computed, effectScope, nextTick, reactive, ref, watch } from 'vue'
 import { parseSongManifest } from '../src/main/song-import/manifest.ts'
 import { folder, meta, manifest } from './fixtures.ts'
@@ -27,20 +27,17 @@ async function loadComponent(
   modules: Record<string, unknown> = {}
 ): Promise<Component> {
   const source = await readFile(new URL(`../src/renderer/src/${file}`, import.meta.url), 'utf8')
-  const { descriptor } = parse(source)
-  const script = compileScript(descriptor, { id: file, inlineTemplate: true })
-  const component = loadTestModule(
-    script.content,
+  return loadVueComponent(
+    source,
     {
       vue,
       gsap: { default: animations },
       '@renderer/composables/useSound': { useSound: () => ({ play: () => {} }) },
       ...modules
     },
-    domGlobals
-  ).default as Component & { __cssModules: object }
-  component.__cssModules = { $style: new Proxy({}, { get: (_, name) => name }) }
-  return component
+    domGlobals,
+    file
+  )
 }
 
 async function loadPopup(): Promise<Component> {

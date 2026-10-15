@@ -38,8 +38,8 @@ const api = {
     deleteSong: async (id: string): Promise<SongDeleteResponse> => {
       return await ipcRenderer.invoke(IPC_CHANNELS.SONGS.DELETE, id)
     },
-    fixOffset: async (song: Song, songOffsetMs: number): Promise<Song> => {
-      return await ipcRenderer.invoke(IPC_CHANNELS.SONGS.FIX_OFFSET, song, songOffsetMs)
+    fixOffset: async (id: string, songOffsetMs: number): Promise<void> => {
+      await ipcRenderer.invoke(IPC_CHANNELS.SONGS.FIX_OFFSET, id, songOffsetMs)
     },
     songPlayed: async (id: string): Promise<void> => {
       return await ipcRenderer.invoke(IPC_CHANNELS.SONGS.SONG_PLAYED, id)

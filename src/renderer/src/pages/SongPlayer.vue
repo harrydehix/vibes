@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import PlayerPauseMenu from '@renderer/components/PlayerPauseMenu.vue'
 import SimpleKaraokeLyrics from '@renderer/components/SimpleKaraokeLyrics.vue'
+import SongOffsetEditor from '@renderer/components/SongOffsetEditor.vue'
 import { accessController } from '@renderer/composables/useController'
 import { useSongPlayer } from '@renderer/composables/useSongPlayer'
 import gsap from 'gsap'
@@ -143,6 +144,7 @@ async function animateOut() {
       ></video>
       <SimpleKaraokeLyrics v-if="player.currentSong.value?.lyricsTiming !== 'video'" />
       <PlayerPauseMenu :animation-before-leave="animateOut" />
+      <SongOffsetEditor />
       <div :class="`${$style.timeOffset} ${showTimeOffset ? '' : $style.hidden}`">
         <div :class="$style.slider">{{ settings.settings?.value?.syncOffsetMs }} ms</div>
       </div>

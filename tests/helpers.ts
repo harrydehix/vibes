@@ -1,6 +1,8 @@
 import { createRequire } from 'node:module'
 import { Script } from 'node:vm'
 import ts from 'typescript'
+import { compileScript, parse } from '@vue/compiler-sfc'
+import type { Component } from 'vue'
 
 const require = createRequire(import.meta.url)
 
@@ -21,4 +23,19 @@ export function loadTestModule(
     require: (name: string) => modules[name] ?? require(name)
   })
   return exports
+}
+
+export function loadVueComponent(
+  source: string,
+  modules: Record<string, unknown>,
+  globals: Record<string, unknown> = {},
+  id = 'component-test'
+): Component {
+  const { descriptor } = parse(source)
+  const script = compileScript(descriptor, { id, inlineTemplate: true })
+  const component = loadTestModule(script.content, modules, globals).default as Component & {
+    __cssModules: object
+  }
+  component.__cssModules = { $style: new Proxy({}, { get: (_target, name) => name }) }
+  return component
 }

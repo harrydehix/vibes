@@ -31,7 +31,9 @@ Once installed vibes will automatically check for updates on startup and install
 
 Use `C` to toggle an additional background to make the lyrics more readable.
 
-Use `ArrowUp` and `ArrowDown` to change the sync time of the lyrics dynamically if they are not perfectly in sync with the music while playing a song.
+Use `ArrowUp` and `ArrowDown` to change the sync time of the lyrics dynamically if they are not perfectly in sync with the music while playing a song. This configures the global sync time and affects all songs played in the app.
+
+If you just want to configure the sync time for the current song (if its original timings are not correct), you can do so in the song-specific settings by pressing `F`. The settings are applied immediately. If you want them to be persisted for future plays press the `Apply` button.
 
 Use `Esc` to open the pause menu. From there you can restart the song, go back to the song list, change settings or quit the app.
 

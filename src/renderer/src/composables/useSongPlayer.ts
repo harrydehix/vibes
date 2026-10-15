@@ -26,6 +26,7 @@ export function useSongPlayer() {
   // Computed Properties
   const currentSong = computed(() => songsApi.songs.value[currentIndex.value])
   const currentTime = ref(0)
+  const songOffsetPreviewMs = ref<number | null>(null)
   const pausedByUser = computed(() => {
     return !isPlaying.value && isLoaded.value === true
   })
@@ -303,6 +304,7 @@ export function useSongPlayer() {
     isPlaying,
     isLoading,
     currentTime,
+    songOffsetPreviewMs,
     duration,
     ended,
     getCurrentTime: () => {

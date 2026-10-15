@@ -13,6 +13,7 @@ const defaultSettings: AppSettings = {
   musicVolume: 1,
   sfxVolume: 0.8,
   lyricsFontScale: 1.4,
+  lyricsAlignment: 'left',
   syncOffsetMs: -150,
   highContrastMode: false,
   lowPerformanceMode: false,

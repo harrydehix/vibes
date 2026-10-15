@@ -146,6 +146,31 @@ function closeSettings() {
             v-model="settings!.lyricsFontScale"
           />
         </div>
+        <div :class="$style.settingsItem">
+          <span>Alignment</span>
+          <div :class="$style.alignmentControl" role="group" aria-label="Lyrics alignment">
+            <label :class="$style.alignmentOption" title="Left-aligned lyrics">
+              <input
+                v-model="settings!.lyricsAlignment"
+                type="radio"
+                name="lyrics-alignment"
+                value="left"
+                aria-label="Left-aligned lyrics"
+              />
+              <v-icon name="md-formatalignleft" aria-hidden="true" />
+            </label>
+            <label :class="$style.alignmentOption" title="Centered lyrics">
+              <input
+                v-model="settings!.lyricsAlignment"
+                type="radio"
+                name="lyrics-alignment"
+                value="center"
+                aria-label="Centered lyrics"
+              />
+              <v-icon name="md-formataligncenter" aria-hidden="true" />
+            </label>
+          </div>
+        </div>
       </div>
       <div :class="[$style.settingsMenu, $style.wideMenu]">
         <h2>Song Sources</h2>
@@ -316,6 +341,49 @@ function closeSettings() {
       color: white;
       font-size: 1.5rem;
     }
+  }
+}
+
+.alignmentControl {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.alignmentOption {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.25rem;
+  height: 3rem;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.25);
+  color: white;
+
+  input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  svg {
+    width: 1.5rem;
+    height: 1.5rem;
+    pointer-events: none;
+  }
+
+  &:has(input:checked) {
+    background: white;
+    color: black;
+  }
+
+  &:has(input:focus-visible) {
+    outline: 2px solid #9c62ff;
+    outline-offset: 2px;
   }
 }
 

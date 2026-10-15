@@ -36,6 +36,7 @@ export function useSettings() {
           musicVolume: settings.value?.musicVolume ?? 0.8,
           sfxVolume: settings.value?.sfxVolume ?? 0.8,
           lyricsFontScale: settings.value?.lyricsFontScale ?? 1,
+          lyricsAlignment: settings.value?.lyricsAlignment ?? 'left',
           syncOffsetMs: settings.value?.syncOffsetMs ?? -100
         })
       )

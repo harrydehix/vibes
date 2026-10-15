@@ -6,6 +6,8 @@ import router from './router'
 import { addIcons, OhVueIcon } from 'oh-vue-icons'
 import {
   MdMusicnote,
+  MdFormatalignleft,
+  MdFormataligncenter,
   MdRestartaltTwotone,
   MdQueuemusicOutlined,
   MdSettingssuggest,
@@ -34,6 +36,8 @@ import {
 
 addIcons(
   MdMusicnote,
+  MdFormatalignleft,
+  MdFormataligncenter,
   FaPlay,
   MdRefresh,
   MdRestartaltTwotone,

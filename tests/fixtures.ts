@@ -36,7 +36,7 @@ export async function createSongDeletionFixture(context: TestContext) {
   const root = path.join(base, 'library')
   await mkdir(root)
   const roots = [root]
-  const handlers = new Map<string, (event: object, id: unknown) => Promise<SongDeleteResponse>>()
+  const handlers = new Map<string, (event: object, ...args: unknown[]) => Promise<unknown>>()
   const errors: unknown[] = []
   let failure: Error | null = null
   const source = await readFile(new URL('../src/main/ipc/songs.ts', import.meta.url), 'utf8')
@@ -53,6 +53,10 @@ export async function createSongDeletionFixture(context: TestContext) {
       },
       'fs/promises': {
         ...require('node:fs/promises'),
+        writeFile: async (filename: string, content: string, encoding: 'utf-8') => {
+          if (failure) throw failure
+          await writeFile(filename, content, encoding)
+        },
         rm: async (folder: string, options: Parameters<typeof rm>[1]) => {
           if (failure) throw failure
           await rm(folder, options)
@@ -76,7 +80,13 @@ export async function createSongDeletionFixture(context: TestContext) {
     roots,
     manager,
     errors,
-    deleteSong: (id: unknown) => handlers.get(IPC_CHANNELS.SONGS.DELETE)!({}, id),
+    deleteSong: (id: unknown) =>
+      handlers.get(IPC_CHANNELS.SONGS.DELETE)!({}, id) as Promise<SongDeleteResponse>,
+    fixOffset: (song: Song, offsetMs: unknown) =>
+      handlers.get(IPC_CHANNELS.SONGS.FIX_OFFSET)!({}, song.meta.id, offsetMs) as Promise<void>,
+    songPlayed: (id: string) =>
+      handlers.get(IPC_CHANNELS.SONGS.SONG_PLAYED)!({}, id) as Promise<void>,
+    refreshSongs: () => handlers.get(IPC_CHANNELS.SONGS.REFRESH)!({}) as Promise<Song[]>,
     addSong: async (folder: string, id: string) => {
       await mkdir(folder, { recursive: true })
       await writeFile(path.join(folder, 'video.mp4'), 'temporary test media')

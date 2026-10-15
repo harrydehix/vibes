@@ -3,6 +3,7 @@ export type AppSettings = {
   musicVolume: number
   sfxVolume: number
   lyricsFontScale: number
+  lyricsAlignment: 'left' | 'center'
   syncOffsetMs: number
   highContrastMode: boolean
   lowPerformanceMode: boolean
@@ -73,6 +74,7 @@ export type Song = {
 }
 
 export type VibesSongMeta = {
+  fixOffsetMs?: number
   playCount: number
   favorite: boolean
   id: string
