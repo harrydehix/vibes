@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { accessSettings } from '@renderer/composables/useSettings'
 import { accessSongPlayer } from '@renderer/composables/useSongPlayer'
-import { Line } from '@shared/types'
+import type { Line } from '@shared/types'
 import { gsap } from 'gsap'
 import { computed, onMounted, onUnmounted, ref, watch, nextTick } from 'vue'
 
 const videoPlayer = accessSongPlayer()
+const phraseTiming = computed(() => videoPlayer.currentSong.value?.lyricsTiming === 'phrase')
 
 const containerRef = ref<HTMLDivElement | null>(null)
 const trackRef = ref<HTMLDivElement | null>(null)
@@ -135,7 +136,7 @@ const syncTimeline = () => {
     if (newLine) {
       console.log(`P1: ${lines.value.P1[activeLineIndex]?.syllables.map((s) => s.text).join('')}`)
     }
-    activeSyllableEffect(activeLineIndex, time, newLine)
+    if (!phraseTiming.value) activeSyllableEffect(activeLineIndex, time, newLine)
   }
 }
 
@@ -224,7 +225,11 @@ function activeSyllableEffect(lineIndex: number, timeMs: number, newLine: boolea
     for (let i = currentActiveSyllableIndex.value + 1; i <= syllableIndex; i++) {
       highlightSyllable(line.syllables[i], i, lineIndex)
     }
-  } else if (newLine && currentActiveSyllableIndex.value + 1 !== previousLine.syllables.length) {
+  } else if (
+    newLine &&
+    previousLine &&
+    currentActiveSyllableIndex.value + 1 !== previousLine.syllables.length
+  ) {
     // Highlight remaining syllables of previous line if we jumped to a new line
     for (let i = currentActiveSyllableIndex.value + 1; i < previousLine.syllables.length; i++) {
       highlightSyllable(previousLine.syllables[i], i, lineIndex - 1)
@@ -241,6 +246,7 @@ function activeSyllableEffect(lineIndex: number, timeMs: number, newLine: boolea
 
 function scrollToLine(index: number, activate: boolean = true) {
   const previousLineIndex = currentActiveLineIndex.value
+  if (activate && previousLineIndex === index) return false
   const previousLineDiv = lineDivs.value[previousLineIndex]
   currentActiveLineIndex.value = index
   if (previousLineDiv) {
@@ -288,6 +294,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  gsap.ticker.remove(syncTimeline)
   if (ctx) {
     ctx.revert()
   }
@@ -311,7 +318,7 @@ onUnmounted(() => {
         v-for="(line, index) in lines.P1"
         :key="videoPlayer.currentSong.value.index + '-' + index"
         :ref="(el) => (lineDivs[index] = el as any)"
-        :class="`${$style.lyricsLine} ${settings?.highContrastMode && videoPlayer.isUsingVideo.value ? $style.contrast : ''} ${!settings?.lowPerformanceMode ? $style.highPerformance : ''}`"
+        :class="`${$style.lyricsLine} ${phraseTiming ? $style.phrase : ''} ${settings?.highContrastMode && videoPlayer.isUsingVideo.value ? $style.contrast : ''} ${!settings?.lowPerformanceMode ? $style.highPerformance : ''}`"
         :style="
           virtualizationEnabled && lineHeights[index]
             ? {
@@ -322,11 +329,16 @@ onUnmounted(() => {
         "
       >
         <div :class="$style.inner">
-          <span
-            v-for="(syllable, syllableIndex) in line.syllables"
-            :key="syllable.text + syllableIndex"
-            >{{ syllable.text }}</span
-          >
+          <span v-if="phraseTiming">{{
+            line.syllables.map((syllable) => syllable.text).join('')
+          }}</span>
+          <template v-else>
+            <span
+              v-for="(syllable, syllableIndex) in line.syllables"
+              :key="syllable.text + syllableIndex"
+              >{{ syllable.text }}</span
+            >
+          </template>
         </div>
       </div>
     </div>
@@ -411,6 +423,15 @@ onUnmounted(() => {
     opacity: 0.5;
     display: inline-block;
     white-space: pre;
+  }
+}
+
+.phrase {
+  max-width: calc(100vw - 3rem);
+  span {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    opacity: 1;
   }
 }
 </style>

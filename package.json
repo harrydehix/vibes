@@ -1,6 +1,6 @@
 {
   "name": "vibes",
-  "version": "1.0.25",
+  "version": "1.0.26",
   "description": "karaoke app for personal use",
   "repository": "github:harrydehix/vibes",
   "main": "./out/main/index.js",
@@ -9,6 +9,7 @@
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint --cache .",
+    "test:imports": "node --experimental-strip-types --test tests/*.test.ts",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "vue-tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
@@ -22,19 +23,22 @@
     "build:linux": "npm run build && electron-builder --linux"
   },
   "dependencies": {
-    "@bbc/tv-lrud-spatial": "^0.0.16",
+    "@bbc/tv-lrud-spatial": "^0.0.18",
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "@vueuse/core": "^14.2.1",
     "array-shuffle": "^4.1.0",
     "effect": "^3.21.0",
     "electron-updater": "^6.3.9",
+    "ffmpeg-static": "^5.3.0",
+    "ffprobe-static": "^3.1.0",
     "fuse.js": "^7.3.0",
     "gsap": "^3.14.2",
     "oh-vue-icons": "^1.0.0-rc3",
     "uuid": "^14.0.0",
     "vue-router": "^5.0.4",
-    "vue3-toastify": "^0.2.9"
+    "vue3-toastify": "^0.2.9",
+    "youtubei.js": "^18.1.0"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config-prettier": "3.0.0",
@@ -42,11 +46,12 @@
     "@electron-toolkit/tsconfig": "^2.0.0",
     "@types/node": "^22.19.1",
     "@vitejs/plugin-vue": "^6.0.2",
-    "electron": "^39.2.6",
+    "electron": "^44.7.2",
     "electron-builder": "^26.0.12",
     "electron-vite": "^5.0.0",
     "eslint": "^9.39.1",
     "eslint-plugin-vue": "^10.6.2",
+    "happy-dom": "^21.0.1",
     "less": "^4.6.4",
     "prettier": "^3.7.4",
     "typescript": "^5.9.3",

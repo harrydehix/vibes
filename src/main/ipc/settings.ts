@@ -15,7 +15,8 @@ const defaultSettings: AppSettings = {
   lyricsFontScale: 1.4,
   syncOffsetMs: -150,
   highContrastMode: false,
-  lowPerformanceMode: false
+  lowPerformanceMode: false,
+  youtubeSignInDismissed: false
 }
 
 class SettingsManager {

@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, protocol, screen, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, protocol, screen, ipcMain, dialog } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
@@ -10,14 +10,14 @@ import { downloaderManager } from './ipc/downloaderManager'
 import { existsSync } from 'fs'
 import { ytDlpManager } from './ipc/ytdlp'
 import { IPC_CHANNELS } from '../shared/ipc'
+import { youtubeAuthManager } from './ipc/youtubeAuth'
+import { ffmpegManager } from './ipc/ffmpeg'
 
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 app.commandLine.appendSwitch('disable-features', 'AudioServiceOutOfProcess')
 app.commandLine.appendSwitch('audio-process-high-priority')
 app.commandLine.appendSwitch('disable-renderer-backgrounding')
 app.commandLine.appendSwitch('disable-background-timer-throttling')
-app.commandLine.appendSwitch('disable-frame-rate-limit')
-app.commandLine.appendSwitch('disable-gpu-vsync')
 
 function createWindow(): void {
   // Create the browser window.
@@ -93,9 +93,11 @@ function definesUpdateIpcHandles() {
 
 async function init() {
   await ytDlpManager.init()
+  await ffmpegManager.init()
   await settingsManager.defineIpcHandles()
   await songManager.defineIpcHandles()
   dialogManager.defineIpcHandles()
+  youtubeAuthManager.defineIpcHandles()
   await downloaderManager.defineIpcHandles()
   definesUpdateIpcHandles()
   createWindow()
@@ -182,7 +184,14 @@ app.whenReady().then(() => {
     }
   })
 
-  init()
+  void init().catch((error) => {
+    console.error('Application startup failed:', error)
+    dialog.showErrorBox(
+      'vibes could not start',
+      error instanceof Error ? error.message : 'Could not initialize the media tools.'
+    )
+    app.quit()
+  })
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the

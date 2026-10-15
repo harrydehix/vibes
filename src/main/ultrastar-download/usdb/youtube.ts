@@ -1,18 +1,20 @@
 import { Effect } from 'effect'
-import { API_URL } from './config.js'
+import { USDB_API_URL } from './config.js'
 
 /* Code by: https://github.com/martiinii/UltraStar-CLI */
 
-export type YoutubeLink = {
+export type UsdbYoutubeLink = {
   createdAt: Date
   link: string
 }
 
-export const parseComments = (html: string): string[] => {
+export const parseUsdbComments = (html: string): string[] => {
   return [...html.matchAll(/<td>\d+\.\d+\.\d+ - \d+:\d+.*?<\/td>[\s\S]*?<\/td>/gm)].map((m) => m[0])
 }
 
-export const parseYoutubeLinkFromComment = (r: RegExpMatchArray | null): YoutubeLink | null => {
+export const parseUsdbYoutubeLinkFromComment = (
+  r: RegExpMatchArray | null
+): UsdbYoutubeLink | null => {
   const dateStr = r?.[1]
   const timeStr = r?.[2]
   const linkRaw = r?.[3]
@@ -33,19 +35,19 @@ export const parseYoutubeLinkFromComment = (r: RegExpMatchArray | null): Youtube
   }
 }
 
-export const parseYoutubeLinks = (html: string): YoutubeLink[] => {
-  const comments = parseComments(html)
+export const parseUsdbYoutubeLinks = (html: string): UsdbYoutubeLink[] => {
+  const comments = parseUsdbComments(html)
     .map((c) => c.match(/<td>(\d+\.\d+\.\d+) - (\d+:\d+)[\s\S]*src="http(.*?(?=youtu\.?be).*?)"/m))
-    .map(parseYoutubeLinkFromComment)
-    .filter(Boolean) as YoutubeLink[]
+    .map(parseUsdbYoutubeLinkFromComment)
+    .filter(Boolean) as UsdbYoutubeLink[]
 
   return comments
 }
 
-export const fetchDetailPage = (id: number, cookie?: string) =>
+export const fetchUsdbSongPage = (id: number, cookie?: string) =>
   Effect.tryPromise({
     try: async () => {
-      const response = await fetch(`${API_URL}/?link=detail&id=${id}`, {
+      const response = await fetch(`${USDB_API_URL}/?link=detail&id=${id}`, {
         method: 'GET',
         headers: {
           ...(cookie ? { Cookie: cookie } : {})
@@ -59,8 +61,8 @@ export const fetchDetailPage = (id: number, cookie?: string) =>
     catch: (e) => (e instanceof Error ? e : new Error('Failed to fetch detail page'))
   })
 
-export const getYoutubeLinksById = (id: number, cookie?: string) =>
+export const getUsdbYoutubeLinksById = (id: number, cookie?: string) =>
   Effect.gen(function* () {
-    const html = yield* fetchDetailPage(id, cookie)
-    return parseYoutubeLinks(html)
+    const html = yield* fetchUsdbSongPage(id, cookie)
+    return parseUsdbYoutubeLinks(html)
   })

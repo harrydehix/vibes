@@ -3,27 +3,23 @@ import { accessSongs } from '@renderer/composables/useSongs'
 import { useSound } from '@renderer/composables/useSound'
 import router from '@renderer/router'
 import { accessLocalFile } from '@renderer/utils/accessLocalFile'
-import { Song, UsdbSong } from '@shared/types'
+import type { Song, ImportCandidate } from '@shared/types'
 import Fuse from 'fuse.js'
 import { computed, ref, watch, onUnmounted, useCssModule, onMounted, nextTick } from 'vue'
 import gsap from 'gsap'
 import { accessBackgroundMusic } from '@renderer/composables/useBackgroundMusic'
 import LoadingSpinner from '@renderer/components/LoadingSpinner.vue'
 import { useRoute } from 'vue-router'
-import { DownloadState, useDownloader } from '@renderer/composables/useDownloader'
+import { useDownloader } from '@renderer/composables/useDownloader'
+import { useRemoteSongSearch } from '@renderer/composables/useRemoteSongSearch'
 import { onKeyStroke } from '@vueuse/core'
 import defaultCover from '@renderer/assets/cover-fallback.png'
+import YoutubeImport from '@renderer/components/YoutubeImport.vue'
 
-const { songs, refresh } = accessSongs()
+const { songs } = accessSongs()
 const $style = useCssModule()
 const search = ref<string>('')
 const locallySearchedSongs = ref<Song[]>([])
-const availableForDownloadSongs = ref<
-  {
-    song: UsdbSong
-    downloadState: DownloadState | null
-  }[]
->([])
 const sound = useSound()
 const backgroundMusic = accessBackgroundMusic()
 
@@ -34,7 +30,6 @@ const localFuseSearch = computed(() => {
   })
 })
 const locallyLoading = ref(true)
-const onlineLoading = ref(true)
 const emptyState = computed(() => {
   return songs.value.length === 0 && search.value === ''
 })
@@ -82,10 +77,12 @@ onUnmounted(() => {
 })
 
 onKeyStroke('Escape', () => {
+  if (selectedYoutube.value) {
+    selectedYoutube.value = null
+    return
+  }
   navigateToList(false)
 })
-
-const searchTimeout = ref<number | null>(null)
 
 const route = useRoute()
 const previousSongIndex = computed(() => {
@@ -94,50 +91,33 @@ const previousSongIndex = computed(() => {
 })
 
 const downloader = useDownloader()
-
+const { selectedYoutube, searchErrors, availableForDownloadSongs, onlineLoading } =
+  useRemoteSongSearch(search, downloader)
+const availableResults = computed(() =>
+  availableForDownloadSongs.value.map((candidate) => ({
+    candidate,
+    downloadState: downloader.downloads.value.find(
+      (entry) => entry.candidate.source === candidate.source && entry.candidate.id === candidate.id
+    ),
+    localSong: songs.value.find(
+      (song) => song.source?.provider === candidate.source && song.source.id === candidate.id
+    )
+  }))
+)
 watch(
   search,
-  async (newSearch) => {
-    if (searchTimeout.value) {
-      clearTimeout(searchTimeout.value)
-    }
-    searchTimeout.value = window.setTimeout(async () => {
-      const results = await searchForSongs(newSearch)
-      console.log('Search results:', results)
-      locallySearchedSongs.value = results.downloaded
-      await nextTick()
-      locallyLoading.value = false
-      availableForDownloadSongs.value = (await results.available).map((s) => ({
-        song: s,
-        downloadState: downloader.downloads.value.find((d) => d.song.apiId === s.apiId) ?? null
-      }))
-      onlineLoading.value = false
-    }, 300)
+  (newSearch) => {
+    locallySearchedSongs.value = localFuseSearch.value
+      .search(newSearch)
+      .map((result) => result.item)
+    locallyLoading.value = false
   },
   {
     immediate: true
   }
 )
 
-function searchForSongs(search: string): {
-  downloaded: Song[]
-  available: Promise<UsdbSong[]>
-} {
-  locallyLoading.value = true
-  onlineLoading.value = true
-  const downloaded = localFuseSearch.value.search(search).map((result) => result.item)
-  return {
-    downloaded,
-    available: (async () => {
-      if (!search) return []
-      console.log('Searching online for:', search)
-
-      return await downloader.search({ search })
-    })()
-  }
-}
-
-async function playLocalSong(song: Song) {
+async function playLocalSong(song: Song): Promise<void> {
   if (song) {
     sound.play('click')
     console.log('Selected local song:', song.title, 'by', song.artist)
@@ -150,7 +130,7 @@ async function playLocalSong(song: Song) {
   }
 }
 
-function navigateToList(withSound = true) {
+function navigateToList(withSound = true): void {
   if (withSound) {
     sound.play('click')
   }
@@ -159,7 +139,7 @@ function navigateToList(withSound = true) {
   })
 }
 
-function fadeOut(callback: () => void) {
+function fadeOut(callback: () => void): void {
   if (gsapScope.value) {
     gsap.to(gsapScope.value, {
       opacity: 0,
@@ -172,70 +152,17 @@ function fadeOut(callback: () => void) {
   }
 }
 
-async function downloadSong(song: UsdbSong) {
-  await downloader.download(JSON.parse(JSON.stringify(song)))
-  sound.play('downloadSuccess')
-}
-
-function alreadyDownloaded(song: UsdbSong): boolean {
-  const sanitizedTitle = song.title.replace(/\&amp;/g, '&')
-  const sanitizedArtist = song.artist.replace(/\&amp;/g, '&')
-  return songs.value.some(
-    (s) =>
-      s.title.toLowerCase() === sanitizedTitle.toLowerCase() &&
-      s.artist.toLowerCase() === sanitizedArtist.toLowerCase()
-  )
-}
-
-const refreshTimeout = ref<number | null>(null)
-
-watch(
-  downloader.downloads,
-  async (downloads) => {
-    for (const downloadState of downloads) {
-      const entry = availableForDownloadSongs.value.find(
-        (s) => s.song.apiId === downloadState.song.apiId
-      )
-      if (entry) {
-        entry.downloadState = downloadState
-      }
-      if (downloadState.status === 'completed') {
-        // Wait a tick to ensure the new song is added to the songs list and UI has updated
-        await nextTick()
-        if (!alreadyDownloaded(downloadState.song)) {
-          if (refreshTimeout.value) {
-            clearTimeout(refreshTimeout.value)
-          }
-          refreshTimeout.value = window.setTimeout(() => {
-            refresh()
-          }, 1000)
-          console.log(
-            `Song successfully downloaded: ${downloadState.song.title} by ${downloadState.song.artist}`
-          )
-        }
-      }
-    }
-  },
-  { immediate: true, deep: true }
-)
-
-function playIfDownloaded(isDownloaded: boolean, song: UsdbSong) {
-  if (isDownloaded) {
-    // fix that they are not equal if there are special chars like & in the title/artist, probably due to html encoding somewhere
-    const sanitizedTitle = song.title.replace(/\&amp;/g, '&')
-    const sanitizedArtist = song.artist.replace(/\&amp;/g, '&')
-
-    const localSong = songs.value.find(
-      (s) =>
-        s.title.toLowerCase() === sanitizedTitle.toLowerCase() &&
-        s.artist.toLowerCase() === sanitizedArtist.toLowerCase()
-    )
-    if (localSong) {
-      playLocalSong(localSong)
-    } else {
-      console.error('Downloaded song not found in local songs list:', song)
-    }
+async function downloadSong(candidate: ImportCandidate): Promise<void> {
+  if (candidate.source === 'youtube') {
+    selectedYoutube.value = candidate
+    return
   }
+  const result = await downloader.importSong({ candidate })
+  if (result) sound.play('downloadSuccess')
+}
+
+function displayText(value: string): string {
+  return value.replace(/&amp;/g, '&')
 }
 
 const input = ref<HTMLInputElement | null>(null)
@@ -260,7 +187,7 @@ watch(
           ref="input"
           v-model="search"
           type="text"
-          placeholder="Search for a song or artist..."
+          placeholder="Search for a song, artist or YouTube link..."
         />
       </div>
       <div :class="$style.goToSongList" v-if="songs?.length > 0" @click="navigateToList()">
@@ -319,52 +246,95 @@ watch(
               </Transition>
             </div>
             <div :class="$style.availableForDownload" v-if="search !== ''">
-              <div :class="$style.banner">
-                <v-icon name="md-clouddownload"></v-icon>
-                Available for download
+              <div :class="$style.onlineBar">
+                <div :class="$style.banner">
+                  <v-icon name="md-clouddownload"></v-icon>
+                  Available for download
+                </div>
+                <span
+                  v-if="onlineLoading && availableResults.length > 0"
+                  :class="$style.searchActivity"
+                  role="status"
+                  aria-label="Searching remaining sources"
+                >
+                  <LoadingSpinner compact />
+                </span>
               </div>
-              <div v-if="onlineLoading" :class="$style.loadingContainer">
+              <div
+                v-if="onlineLoading && availableResults.length === 0"
+                :class="$style.loadingContainer"
+                role="status"
+                aria-label="Searching songs"
+              >
                 <LoadingSpinner />
               </div>
-              <div v-else-if="availableForDownloadSongs.length === 0" :class="$style.noResults">
+              <p
+                v-for="error in searchErrors"
+                :key="error"
+                :class="$style.sourceError"
+                role="status"
+              >
+                {{ error }}
+              </p>
+              <div v-if="!onlineLoading && availableResults.length === 0" :class="$style.noResults">
                 <v-icon name="io-sad-sharp"></v-icon>
                 Oupps... we don't know this song yet!
               </div>
               <div
-                v-else
-                v-for="{ song, downloadState } in availableForDownloadSongs"
-                :key="song.apiId"
-                :id="`cloud-${song.apiId}`"
-                :class="`${$style.availableSongResult} ${downloadState?.status === 'completed' ? $style.downloaded : ''}`"
-                @click="playIfDownloaded(downloadState?.status === 'completed', song)"
+                v-for="{ candidate, downloadState, localSong } in availableResults"
+                :key="`${candidate.source}:${candidate.id}`"
+                :id="`cloud-${candidate.source}-${candidate.id}`"
+                :class="$style.resultEntry"
               >
-                <div><span v-html="song.title"></span> - <span v-html="song.artist"></span></div>
-                <div :class="$style.progress" v-if="downloadState">
-                  <div
-                    :class="$style.progressBar"
-                    :style="{
-                      width: `${(downloadState?.progress ?? 0) * 100}%`
-                    }"
-                  ></div>
+                <div :class="`${$style.availableSongResult} ${localSong ? $style.downloaded : ''}`">
+                  <div :class="$style.remoteSongInfo">
+                    <div>
+                      {{ displayText(candidate.title) }} - {{ displayText(candidate.artist) }}
+                    </div>
+                  </div>
+                  <div :class="$style.resultActions">
+                    <span :class="$style.sourceBadge"
+                      ><v-icon
+                        :name="candidate.source === 'youtube' ? 'fa-youtube' : 'md-musicnote'"
+                      />{{ candidate.source === 'youtube' ? 'YouTube' : 'USDB' }}</span
+                    >
+                    <div
+                      :class="$style.progress"
+                      v-if="downloadState?.status === 'downloading'"
+                      role="status"
+                    >
+                      <div
+                        :class="$style.progressBar"
+                        :style="{
+                          width: `${(downloadState?.progress ?? 0) * 100}%`
+                        }"
+                      ></div>
 
-                  <span>
-                    <template v-if="downloadState?.status === 'completed'">
-                      <v-icon name="md-downloaddone-outlined"></v-icon>
-                      Downloaded</template
+                      <span> Downloading... </span>
+                    </div>
+                    <button
+                      :class="$style.downloadButton"
+                      @click="localSong ? playLocalSong(localSong) : downloadSong(candidate)"
+                      v-else
                     >
-                    <template v-else-if="downloadState?.status === 'downloading'"
-                      >Downloading...</template
-                    >
-                    <template v-else>Download unavailable</template>
-                  </span>
+                      <v-icon :name="localSong ? 'fa-play' : 'md-clouddownload'" />
+                      {{
+                        localSong
+                          ? 'Play'
+                          : downloadState?.status === 'error'
+                            ? 'Retry'
+                            : 'Download'
+                      }}
+                    </button>
+                  </div>
                 </div>
-                <button
-                  :class="$style.downloadButton"
-                  @click.prevent.stop="() => downloadSong(song)"
-                  v-else
+                <p
+                  v-if="downloadState?.status === 'error' && candidate.source === 'usdb'"
+                  :class="$style.sourceError"
+                  role="alert"
                 >
-                  Download
-                </button>
+                  {{ downloadState.error }}
+                </p>
               </div>
             </div>
           </div>
@@ -372,6 +342,13 @@ watch(
       </div>
     </div>
   </div>
+  <YoutubeImport
+    v-if="selectedYoutube"
+    :key="selectedYoutube.id"
+    :video="selectedYoutube"
+    @play="playLocalSong"
+    @close="selectedYoutube = null"
+  />
 </template>
 <style lang="less" module>
 .search {
@@ -455,6 +432,7 @@ watch(
 
 .header {
   display: flex;
+  flex-wrap: wrap;
   flex-direction: row;
   justify-content: center;
   align-items: center;
@@ -488,7 +466,8 @@ watch(
     color: rgba(255, 255, 255, 0.8);
     background-color: rgba(255, 255, 255, 0.1);
     padding: 1rem;
-    width: 30rem;
+    width: min(30rem, calc(100vw - 4rem));
+    box-sizing: border-box;
     border-radius: 1.5rem;
     height: fit-content;
 
@@ -509,6 +488,54 @@ watch(
       fill: rgba(255, 255, 255, 0.8);
     }
   }
+}
+
+.sourceBadge {
+  color: #505050;
+  background: rgba(0, 0, 0, 0.06);
+}
+.remoteSongInfo {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.resultActions {
+  display: grid;
+  grid-template-columns: repeat(2, 8.5rem);
+  gap: 0.75rem;
+  margin-left: auto;
+  flex-shrink: 0;
+  svg {
+    width: 1.2rem;
+    height: 1.2rem;
+    flex-shrink: 0;
+  }
+}
+.onlineBar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.searchActivity {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  flex-shrink: 0;
+  border-radius: 1rem;
+  color: white;
+  background: rgba(0, 0, 0, 0.75);
+}
+.sourceError {
+  color: #ffc2b8;
+  overflow-wrap: anywhere;
+  font-size: 1rem;
+}
+.resultEntry {
+  display: flex;
+  flex-direction: column;
 }
 
 .resultsBox {
@@ -545,6 +572,34 @@ watch(
     &:hover {
       background-color: rgba(255, 255, 255, 0.4);
     }
+  }
+}
+
+@media (max-width: 760px) {
+  .header {
+    margin-top: 1rem;
+    gap: 0.6rem;
+    padding: 0 0.75rem;
+  }
+  .resultsBox {
+    margin-top: 1rem;
+  }
+  .results {
+    width: 100%;
+    padding: 1rem;
+  }
+  .availableSongResult {
+    flex-wrap: wrap;
+    overflow-wrap: anywhere;
+  }
+  .resultActions {
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+  .localSongResult .songTitle {
+    font-size: 1.3rem;
+    overflow-wrap: anywhere;
   }
 }
 
@@ -608,10 +663,6 @@ watch(
   font-weight: 600;
   overflow: hidden;
 
-  &:last-child {
-    margin-bottom: 2rem;
-  }
-
   &.downloaded {
     opacity: 0.8;
     cursor: pointer;
@@ -665,27 +716,41 @@ watch(
   }
 }
 
+.sourceBadge,
 .downloadButton,
 .progress {
-  margin-left: auto;
-  padding: 0.5rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
+  padding: 0.5rem 0.75rem;
   border-radius: 0.5rem;
-  height: 1.75rem;
-  box-sizing: content-box;
+  height: 2.75rem;
+  box-sizing: border-box;
   font-size: 1rem;
   font-weight: 500;
   outline: none;
   border: none;
+  white-space: nowrap;
+}
+
+.downloadButton,
+.progress {
   color: white;
   background-color: #5826ad;
 }
 
 .downloadButton {
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
 }
 
 .progress {
-  width: 13rem;
   background-color: #240f49;
   position: relative;
   overflow: hidden;
@@ -696,6 +761,8 @@ watch(
 
   span {
     z-index: 9999;
+    overflow: hidden;
+    text-overflow: ellipsis;
 
     svg {
       margin-right: 0.75rem;

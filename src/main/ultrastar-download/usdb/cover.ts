@@ -1,5 +1,5 @@
 import { Effect } from 'effect'
-import { API_URL } from './config.js'
+import { USDB_API_URL } from './config.js'
 
 /* Code by: https://github.com/martiinii/UltraStar-CLI */
 
@@ -7,14 +7,14 @@ import { API_URL } from './config.js'
  * Download song cover image bytes by id.
  * Returns null if the image is not available (non-ok response).
  */
-export const downloadCoverById = (
+export const downloadUsdbCoverById = (
   id: number,
   cookie?: string
 ): Effect.Effect<Uint8Array | null, Error, never> =>
   Effect.gen(function* () {
     const response = yield* Effect.tryPromise({
       try: async () =>
-        await fetch(`${API_URL}/data/cover/${id}.jpg`, {
+        await fetch(`${USDB_API_URL}/data/cover/${id}.jpg`, {
           method: 'GET',
           headers: {
             ...(cookie ? { Cookie: cookie } : {})

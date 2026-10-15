@@ -1,5 +1,9 @@
+<script setup lang="ts">
+const props = defineProps<{ compact?: boolean }>()
+</script>
+
 <template>
-  <span :class="$style.loader"></span>
+  <span :class="[$style.loader, props.compact && $style.compact]" aria-hidden="true"></span>
 </template>
 <style lang="less" module>
 .loader {
@@ -37,6 +41,24 @@
   height: 32px;
   border-color: #fff #fff transparent transparent;
   animation: rotation 1.5s linear infinite;
+}
+
+.compact {
+  width: 24px;
+  height: 24px;
+  border-width: 2px;
+}
+.compact::after,
+.compact::before {
+  width: 18px;
+  height: 18px;
+  border-width: 2px;
+  border-color: transparent transparent #fff #fff;
+}
+.compact::before {
+  width: 12px;
+  height: 12px;
+  border-color: #fff #fff transparent transparent;
 }
 
 @keyframes rotation {

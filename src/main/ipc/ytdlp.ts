@@ -61,10 +61,34 @@ class YtDlpManager {
         app.exit(0)
       } else {
         console.log('yt-dlp is already installed')
+        await this._updateYtDlp()
       }
       this.verified = true
     } catch (error) {
       console.error('Error while ensuring yt-dlp is installed:', error)
+    }
+  }
+
+  private async _updateYtDlp(): Promise<void> {
+    console.log('Checking for yt-dlp updates...')
+    try {
+      await new Promise<void>((resolve, reject) => {
+        execFile(
+          this.binPath,
+          ['--update'],
+          { timeout: 15_000, windowsHide: true },
+          (error, stdout, stderr) => {
+            if (error) {
+              reject(new Error(stderr.trim() || error.message))
+            } else {
+              if (stdout.trim()) console.log(stdout.trim())
+              resolve()
+            }
+          }
+        )
+      })
+    } catch (error) {
+      console.warn('Could not update yt-dlp; continuing with the installed version:', error)
     }
   }
 

@@ -4,7 +4,7 @@
 | :---------------------: | :---------------------: |
 | ![](./screens/img2.png) | ![](./screens/img1.png) |
 
-_vibes_ is a small karaoke application that plays text files synchronized to the UltraStar format. It interfaces with community databases like USDB Animux and utilizes yt-dlp in the background to stream publicly available media.
+_vibes_ is a small karaoke application that plays local media with synchronized UltraStar lyrics or YouTube captions. It interfaces with USDB Animux and uses yt-dlp to download media for offline playback.
 
 **Disclaimer**: Vibes is a client-side tool only. It does not host, distribute, or own any media files or song lyrics. All content is fetched dynamically from third-party sources. Users are responsible for complying with the Terms of Service of any accessed platforms and ensuring they have the legal right to use the respective audio and video files.
 
@@ -14,7 +14,9 @@ Vibes provides first hand support for Windows. MacOS and Linux are also supporte
 
 ### Troubleshooting
 
-If you aren't able to download any songs try to restart the application. Most of the time this fixes the problem. If that doesn't work, make sure you have yt-dlp installed and that it's in your system's PATH. You can check if yt-dlp is installed by running `yt-dlp --version` in your terminal or command prompt. If it's not installed, you can download it from the [yt-dlp GitHub repository](https://github.com/yt-dlp/yt-dlp).
+The app manages its own yt-dlp executable in its user-data directory and checks for yt-dlp updates on startup. Failed update checks fall back to the installed version. If downloads fail, check the full yt-dlp error in the app logs; YouTube restrictions and caption availability can vary by video and region.
+
+FFmpeg and FFprobe are also app-managed. On every startup, vibes checks both executables with `-version`; missing or damaged files are installed from the bundled platform binaries into the `ffmpeg` subfolder of the app's user-data directory. Downloads explicitly use that directory, so no system FFmpeg installation is required. The tools merge separate video/audio streams and remux the result to MP4 when needed.
 
 Problems with starting the application on mac are propably caused by my missing developer id. You have to self sign the app by using `sudo codesign --force --deep --sign "LocalCertificate" /Applications/vibes.app
 `.

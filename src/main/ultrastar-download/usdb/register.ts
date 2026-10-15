@@ -1,15 +1,15 @@
 import { Effect } from 'effect'
-import { API_URL } from './config.js'
+import { USDB_API_URL } from './config.js'
 
 /* Code by: https://github.com/martiinii/UltraStar-CLI */
 
-export type Registration = {
+export type UsdbRegistration = {
   user: string
   pass: string
   email: string
 }
 
-const buildRegistrationForm = (r: Registration): URLSearchParams => {
+const buildRegistrationForm = (r: UsdbRegistration): URLSearchParams => {
   const form = new URLSearchParams()
   form.set('user', r.user)
   form.set('mail', r.email)
@@ -20,11 +20,11 @@ const buildRegistrationForm = (r: Registration): URLSearchParams => {
   return form
 }
 
-export const register = (r: Registration): Effect.Effect<void, Error, never> =>
+export const registerUsdbUser = (r: UsdbRegistration): Effect.Effect<void, Error, never> =>
   Effect.gen(function* () {
     const response = yield* Effect.tryPromise({
       try: async () =>
-        await fetch(`${API_URL}/index.php?link=register`, {
+        await fetch(`${USDB_API_URL}/index.php?link=register`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: buildRegistrationForm(r).toString()

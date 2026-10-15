@@ -1,9 +1,9 @@
 import { Effect } from 'effect'
-import { API_URL } from './config.js'
+import { USDB_API_URL } from './config.js'
 
 /* Code by: https://github.com/martiinii/UltraStar-CLI */
 
-export type SongHeaderType =
+export type UltrastarHeaderName =
   | 'artist'
   | 'title'
   | 'mp3'
@@ -17,18 +17,18 @@ export type SongHeaderType =
   | 'video'
   | 'videogap'
 
-export type SongHeaders = Map<SongHeaderType, string>
+export type UltrastarSongHeaders = Map<UltrastarHeaderName, string>
 
-export type Metadata = {
+export type UsdbSongMetadata = {
   artist: string | null | undefined
   title: string | null | undefined
   year: string | number | null | undefined
   languages: string[] | null | undefined
 }
 
-export type ParsedLyrics = {
-  headers: { [k in SongHeaderType]?: string }
-  metadata: Metadata
+export type ParsedUsdbLyrics = {
+  headers: { [k in UltrastarHeaderName]?: string }
+  metadata: UsdbSongMetadata
   lyrics: string
 } | null
 
@@ -42,19 +42,19 @@ export const mapToObject = <K extends string, V>(map: Map<K, V>) =>
  * Parse lyrics of a song
  * Keeps the provided regex logic intact.
  */
-export const parseLyrics = (html: string): ParsedLyrics => {
+export const parseUsdbLyrics = (html: string): ParsedUsdbLyrics => {
   const text = html.match(/<textarea.*?>([\s\S]*)<\/textarea>/m)?.[1]
   if (!text) return null
 
   const headersRaw = [...text.matchAll(/^#(.*:.*)$/gm)]
-  const headers: SongHeaders = new Map()
+  const headers: UltrastarSongHeaders = new Map()
 
   headersRaw.forEach((h) => {
     const [header, value] = h[1]?.split(':') ?? []
-    if (header && value) headers.set(header.toLowerCase() as SongHeaderType, value)
+    if (header && value) headers.set(header.toLowerCase() as UltrastarHeaderName, value)
   })
 
-  const metadata: Metadata = {
+  const metadata: UsdbSongMetadata = {
     artist: headers.get('artist') ?? 'Unknown',
     title: headers.get('title') ?? 'Unknown',
     year: headers.get('year') ?? '0',
@@ -72,10 +72,10 @@ export const parseLyrics = (html: string): ParsedLyrics => {
 /**
  * Fetch lyrics page HTML for a given song id.
  */
-export const fetchLyricsPage = (id: number, cookie?: string) =>
+export const fetchUsdbLyricsPage = (id: number, cookie?: string) =>
   Effect.tryPromise({
     try: async () => {
-      const response = await fetch(`${API_URL}/?link=editsongs&id=${id}`, {
+      const response = await fetch(`${USDB_API_URL}/?link=editsongs&id=${id}`, {
         method: 'GET',
         headers: {
           ...(cookie ? { Cookie: cookie } : {})
@@ -92,8 +92,8 @@ export const fetchLyricsPage = (id: number, cookie?: string) =>
 /**
  * High-level API: scrape and parse lyrics by id
  */
-export const getLyricsById = (id: number, cookie?: string) =>
+export const getUsdbLyricsById = (id: number, cookie?: string) =>
   Effect.gen(function* () {
-    const html = yield* fetchLyricsPage(id, cookie)
-    return parseLyrics(html)
+    const html = yield* fetchUsdbLyricsPage(id, cookie)
+    return parseUsdbLyrics(html)
   })

@@ -4,7 +4,7 @@ import { computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 const model = defineModel<string[]>({
-  default: []
+  default: () => []
 })
 const songs = accessSongs()
 

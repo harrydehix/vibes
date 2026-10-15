@@ -6,6 +6,12 @@ export type AppSettings = {
   syncOffsetMs: number
   highContrastMode: boolean
   lowPerformanceMode: boolean
+  youtubeSignInDismissed: boolean
+}
+
+export type YoutubeAuthStatus = {
+  authenticated: boolean
+  message: string | null
 }
 
 export type Note =
@@ -23,6 +29,8 @@ export type Note =
     }
 
 export type Song = {
+  source?: SongSource
+  lyricsTiming?: 'syllable' | 'phrase' | 'video'
   folder: string
   usesAudio: boolean
   usesVideo: boolean
@@ -99,13 +107,80 @@ export type UsdbSearchParams = {
   start?: number // pagination offset
 }
 
-export type DownloadSongParams = {
+export type UsdbDownloadParams = {
   song: UsdbSong
   cookie: string
   baseDir?: string
+  onProgress?: (progress: number) => void
 }
 
-export type DownloadSongResult = {
+export type SongImportResult = {
   dirName: string
   songDir: string
 }
+
+export type SongSource = {
+  provider: string
+  id: string
+  url?: string
+}
+
+export type SongManifest = {
+  version: 1
+  source: SongSource
+  title: string
+  artist: string
+  language: string[]
+  media: {
+    video?: string
+    audio?: string
+    cover?: string
+  }
+  lyrics: {
+    timing: 'syllable' | 'phrase' | 'video'
+    lines: Line[]
+    originalFile?: string
+    language?: string
+    automatic?: boolean
+  }
+}
+
+export type SongDeleteResponse = { ok: true; songs: Song[] } | { ok: false; error: string }
+
+export type CaptionTrack = {
+  id: string
+  language: string
+  name: string
+  automatic: boolean
+  isDefault?: boolean
+}
+
+export type ImportCandidate =
+  | {
+      source: 'usdb'
+      id: string
+      title: string
+      artist: string
+      song: UsdbSong
+    }
+  | {
+      source: 'youtube'
+      id: string
+      title: string
+      artist: string
+      url: string
+      tracks: CaptionTrack[]
+      lyricsInVideo?: boolean
+      thumbnail?: string
+    }
+
+export type SongImportRequest =
+  | { candidate: Extract<ImportCandidate, { source: 'usdb' }> }
+  | ({
+      candidate: Extract<ImportCandidate, { source: 'youtube' }>
+      title: string
+      artist: string
+    } & (
+      | { captionTrackId: string; lyricsInVideo?: false }
+      | { lyricsInVideo: true; captionTrackId?: never }
+    ))

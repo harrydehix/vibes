@@ -24,6 +24,7 @@ export function usePreviewPlayer(
   let fadeTween: gsap.core.Tween | null = null
   let isFading = false
   let syncRequestId: number | null = null
+  let loadVersion = 0
 
   // Computed Properties
   const currentSong = computed(() => songsApi.songs.value[currentIndex.value])
@@ -130,8 +131,17 @@ export function usePreviewPlayer(
   })
 
   onUnmounted(() => {
+    stop()
+  })
+
+  const stop = () => {
+    // Invalidate pending play() completions and release media handles before Windows deletes files.
+    loadVersion++
     isPlaying.value = false
+    isLoading.value = false
     if (fadeTween) fadeTween.kill()
+    fadeTween = null
+    isFading = false
     if (syncRequestId !== null) {
       cancelAnimationFrame(syncRequestId)
       syncRequestId = null
@@ -144,9 +154,13 @@ export function usePreviewPlayer(
     audio.value.pause()
     audio.value.removeAttribute('src')
     audio.value.load()
-  })
+    isUsingAudio.value = false
+    isUsingVideo.value = false
+    duration.value = 0
+  }
 
   const loadSong = async (index: number) => {
+    const version = ++loadVersion
     isPlaying.value = false
     if (fadeTween) fadeTween.kill()
     isFading = false
@@ -157,7 +171,10 @@ export function usePreviewPlayer(
     }
 
     const song = songsApi.songs.value[index]
-    if (!song || !video.value) return
+    if (!song || !video.value) {
+      stop()
+      return
+    }
 
     console.log('Previewing song:', song.title)
     isLoading.value = true
@@ -243,10 +260,9 @@ export function usePreviewPlayer(
     if (song.usesVideo) video.value.load()
     if (song.usesAudio) audio.value.load()
 
-    await Promise.all(loadPromises).then(() => {
-      isLoading.value = false
-    })
-
+    await Promise.all(loadPromises)
+    if (version !== loadVersion) return
+    isLoading.value = false
     play()
   }
 
@@ -325,11 +341,22 @@ export function usePreviewPlayer(
 
   watch(
     [songsApi.songs, video],
-    () => {
-      if (songsApi.songs.value.length > 0 && video.value) {
-        console.log('Songs loaded, starting preview with index:', startIndex)
-        loadSong(startIndex)
+    ([songs, element], previous) => {
+      if (!songs.length || !element) {
+        stop()
+        if (!songs.length) currentIndex.value = 0
+        return
       }
+      const previousSong = previous?.[0]?.[currentIndex.value]
+      const preservedIndex = previousSong
+        ? songs.findIndex((song) => song.meta.id === previousSong.meta.id)
+        : -1
+      const index =
+        preservedIndex >= 0
+          ? preservedIndex
+          : Math.min(Math.max(0, currentIndex.value), songs.length - 1)
+      if (index !== currentIndex.value) currentIndex.value = index
+      else loadSong(index)
     },
     {
       immediate: true
@@ -349,6 +376,8 @@ export function usePreviewPlayer(
     // Actions
     play,
     pause,
+    stop,
+    reload: () => loadSong(currentIndex.value),
     seek
   }
 

@@ -6,9 +6,18 @@ import { onMounted, onUnmounted, watch, ref } from 'vue'
 import Folders from './Folders.vue'
 import gsap from 'gsap'
 import { useSound } from '@renderer/composables/useSound'
+import type { YoutubeAuthStatus } from '@shared/types'
+import YoutubeAuthPopup from './YoutubeAuthPopup.vue'
 
 const { settingsOpened } = useSettingsView()
 const { settings, update } = accessSettings()
+const youtubeAuthOpened = ref(false)
+const youtubeStatus = ref<YoutubeAuthStatus | null>(null)
+const youtubeError = ref<string | null>(null)
+const youtubeBusy = ref(false)
+let unsubscribeYoutube: (() => void) | undefined
+let active = true
+let youtubeChanges = 0
 
 const { play } = useSound()
 
@@ -27,6 +36,19 @@ let ctx: gsap.Context
 let tl: gsap.core.Timeline
 
 onMounted(() => {
+  unsubscribeYoutube = window.api.youtubeAuth.onChanged((status) => {
+    youtubeChanges++
+    youtubeStatus.value = status
+  })
+  const version = youtubeChanges
+  void window.api.youtubeAuth
+    .status()
+    .then((status) => {
+      if (active && youtubeChanges === version) youtubeStatus.value = status
+    })
+    .catch(() => {
+      if (active) youtubeError.value = 'Could not check your YouTube session.'
+    })
   if (!settingsRef.value) return
   ctx = gsap.context(() => {
     tl = gsap.timeline()
@@ -35,8 +57,26 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  active = false
+  unsubscribeYoutube?.()
   ctx?.revert()
 })
+
+async function signOutYoutube(): Promise<void> {
+  if (youtubeBusy.value) return
+  youtubeBusy.value = true
+  youtubeError.value = null
+  try {
+    if (settings.value) settings.value.youtubeSignInDismissed = true
+    await window.api.settings.update({ youtubeSignInDismissed: true })
+    const status = await window.api.youtubeAuth.signOut()
+    if (active) youtubeStatus.value = status
+  } catch {
+    if (active) youtubeError.value = 'Could not sign out of YouTube.'
+  } finally {
+    youtubeBusy.value = false
+  }
+}
 
 function closeSettings() {
   play('click')
@@ -107,36 +147,50 @@ function closeSettings() {
           />
         </div>
       </div>
-      <div
-        :class="$style.settingsMenu"
-        :style="{
-          gridColumnStart: 1,
-          gridColumnEnd: 3
-        }"
-      >
+      <div :class="[$style.settingsMenu, $style.wideMenu]">
         <h2>Song Sources</h2>
         <Folders v-model="settings!.songFolders" />
       </div>
-      <div
-        :class="$style.settingsMenu"
-        :style="{
-          gridColumnStart: 1,
-          gridColumnEnd: 3
-        }"
-      >
+      <div :class="[$style.settingsMenu, $style.youtubeMenu]">
+        <h2>YouTube Account</h2>
+        <div :class="$style.youtubeControls">
+          <span>{{ youtubeStatus?.authenticated ? 'Signed in' : 'Not signed in (optional)' }}</span>
+          <button @click="youtubeAuthOpened = true">
+            <v-icon name="fa-youtube" />
+            Manage account
+          </button>
+          <button
+            v-if="youtubeStatus?.authenticated"
+            :disabled="youtubeBusy"
+            @click="signOutYoutube"
+          >
+            <v-icon name="md-exittoapp-outlined" />
+            Sign out
+          </button>
+        </div>
+        <p
+          v-if="youtubeError || youtubeStatus?.message"
+          :class="$style.youtubeMessage"
+          role="status"
+        >
+          {{ youtubeError || youtubeStatus?.message }}
+        </p>
+      </div>
+      <div :class="[$style.settingsMenu, $style.wideMenu]">
         <h2>Performance</h2>
         <div :class="`${$style.settingsItem} ${$style.checkboxItem}`">
           <span>Low Performance Mode</span>
           <input type="checkbox" v-model="settings!.lowPerformanceMode" />
         </div>
       </div>
-      <div :class="$style.goBack">
-        <button @click="closeSettings">
-          <v-icon name="ri-arrow-go-back-line"></v-icon>
-          Go back
-        </button>
-      </div>
     </div>
+    <div :class="$style.goBack">
+      <button @click="closeSettings">
+        <v-icon name="ri-arrow-go-back-line"></v-icon>
+        Go back
+      </button>
+    </div>
+    <YoutubeAuthPopup v-if="youtubeAuthOpened" manual @close="youtubeAuthOpened = false" />
   </div>
 </template>
 <style lang="less" module>
@@ -152,16 +206,53 @@ function closeSettings() {
   user-select: none;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .settingsBox {
   padding: 2rem;
   box-sizing: border-box;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 2rem;
-  grid-template-rows: auto auto auto 1fr;
-  height: 100%;
+  align-content: start;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+    margin: 1rem 0;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    min-height: 32px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.18);
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.35);
+    }
+
+    &:active {
+      background: rgba(255, 255, 255, 0.5);
+    }
+  }
+
+  &::-webkit-scrollbar-button {
+    display: none;
+  }
+
+  &::-webkit-scrollbar-corner {
+    background: transparent;
+  }
 }
 
 .header {
@@ -173,6 +264,8 @@ function closeSettings() {
   flex-direction: row;
   padding: 1rem 2rem;
   font-size: 2rem;
+  box-sizing: border-box;
+  flex-shrink: 0;
   svg {
     width: 2.5rem;
     height: 2.5rem;
@@ -182,6 +275,7 @@ function closeSettings() {
 
 .settingsMenu {
   display: flex;
+  min-width: 0;
   padding: 1.7rem;
   background-color: rgba(255, 255, 255, 0.11);
   flex-direction: column;
@@ -225,17 +319,60 @@ function closeSettings() {
   }
 }
 
+.wideMenu,
+.youtubeMenu {
+  grid-column: 1 / -1;
+}
+
+.youtubeControls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  color: white;
+
+  span {
+    margin-right: auto;
+    font-size: 1.25rem;
+  }
+
+  button {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    border: none;
+    border-radius: 0.5rem;
+    background: white;
+    color: black;
+    font-size: 1.1rem;
+    cursor: pointer;
+
+    svg {
+      width: 1.25rem;
+      height: 1.25rem;
+    }
+  }
+}
+
+.youtubeMessage {
+  margin: 0;
+  color: white;
+  overflow-wrap: anywhere;
+}
+
 .goBack {
   width: 100%;
-  grid-column-start: 1;
-  grid-column-end: 3;
-  grid-row: 4;
   display: flex;
+  flex-shrink: 0;
+  padding: 1rem 2rem 2rem;
+  box-sizing: border-box;
+  background-color: rgba(0, 0, 0, 0.4);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
 
   button {
     width: 100%;
     height: fit-content;
-    margin-top: auto;
     display: flex;
     align-items: center;
     gap: 0.8rem;
@@ -257,6 +394,32 @@ function closeSettings() {
       path:nth-child(2) {
         stroke-width: 2px;
         stroke: black;
+      }
+    }
+  }
+}
+
+@media (max-width: 760px) {
+  .settingsBox {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 1rem;
+    gap: 1rem;
+  }
+
+  .header,
+  .goBack {
+    padding: 1rem;
+  }
+
+  .settingsMenu {
+    padding: 1rem;
+
+    .settingsItem {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0.75rem;
+
+      &.checkboxItem {
+        grid-template-columns: minmax(0, 1fr) 2rem;
       }
     }
   }

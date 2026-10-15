@@ -1,38 +1,39 @@
 import { Effect } from 'effect'
-import { searchSongs, type SearchParams, type Page } from './usdb/search'
-import {
-  downloadSong,
-  sanitizeForPath,
-  type DownloadSongParams,
-  type DownloadSongResult
-} from './downloadSong'
-import { register, generateRandomUsername, generateRandomPassword } from './usdb/register'
-import { login } from './usdb/auth'
+import { searchUsdbSongs } from './usdb/search'
+import { prepareUsdbSongFiles, sanitizeForPath } from './downloadSong'
+import type {
+  UsdbSearchParams,
+  UsdbSearchPage,
+  UsdbDownloadParams,
+  SongImportResult
+} from '../../shared/types'
+import { registerUsdbUser, generateRandomUsername, generateRandomPassword } from './usdb/register'
+import { loginUsdb } from './usdb/auth'
 import path, { join } from 'node:path'
 import { rm } from 'node:fs/promises'
 
 /* Code by: https://github.com/martiinii/UltraStar-CLI */
 
-let globalCookie: string | undefined
+let usdbSessionCookie: string | undefined
 
 /**
  * Initializes the downloader by registering a temporary user and logging in.
  * Stores the session cookie for subsequent requests.
  */
-export async function init(): Promise<void> {
+export async function initializeUsdbSession(): Promise<void> {
   try {
-    console.log('Initializing downloader (registering and logging in)...')
+    console.log('Initializing USDB session (registering and logging in)...')
     const username = generateRandomUsername()
     const password = generateRandomPassword()
     const email = `${username}@example.com`
 
-    await Effect.runPromise(register({ user: username, pass: password, email }))
+    await Effect.runPromise(registerUsdbUser({ user: username, pass: password, email }))
     console.log(`Registered temporary user: ${username}`)
 
-    globalCookie = await Effect.runPromise(login({ user: username, pass: password }))
+    usdbSessionCookie = await Effect.runPromise(loginUsdb({ user: username, pass: password }))
     console.log('Successfully logged in. Cookie acquired.')
   } catch (error) {
-    console.error('Failed to initialize downloader:', error)
+    console.error('Failed to initialize USDB session:', error)
   }
 }
 
@@ -41,14 +42,14 @@ export async function init(): Promise<void> {
  *
  * @param params The search parameters (e.g., interpret, title, limit, start).
  * @param cookie Optional auth cookie for authenticated searches.
- * @returns A promise resolving to a Page containing the search results.
+ * @returns A promise resolving to a UsdbSearchPage containing the search results.
  */
-export async function search(params: SearchParams): Promise<Page> {
-  if (!globalCookie) {
-    await init()
+export async function searchUsdb(params: UsdbSearchParams): Promise<UsdbSearchPage> {
+  if (!usdbSessionCookie) {
+    await initializeUsdbSession()
   }
-  console.log('Searching for songs with params:', params, 'and cookie:', globalCookie)
-  const result = await Effect.runPromise(searchSongs(params, globalCookie))
+  console.log('Searching USDB songs with params:', params)
+  const result = await Effect.runPromise(searchUsdbSongs(params, usdbSessionCookie))
   console.log('Search results:', result)
   return result
 }
@@ -59,17 +60,19 @@ export async function search(params: SearchParams): Promise<Page> {
  * @param params Parameters containing the song, optional cookie, base directory, and progress callback.
  * @returns A promise resolving to the download result containing directory information.
  */
-export async function download(params: DownloadSongParams): Promise<DownloadSongResult> {
-  if (!params.cookie && globalCookie) {
-    params.cookie = globalCookie
+export async function downloadUsdbSong(params: UsdbDownloadParams): Promise<SongImportResult> {
+  if (!usdbSessionCookie && !params.cookie) await initializeUsdbSession()
+  if (!params.cookie && usdbSessionCookie) {
+    params.cookie = usdbSessionCookie
   }
+  if (!params.cookie) throw new Error('Could not authenticate with USDB')
   const dirName = path.join(
     params.baseDir ?? join(process.cwd(), 'songs'),
     sanitizeForPath(`${params.song.artist} - ${params.song.title}`)
   )
   try {
-    console.log('Downloading song with params:', params)
-    const result = await Effect.runPromise(downloadSong(params))
+    console.log('Downloading USDB song:', params.song.artist, params.song.title)
+    const result = await Effect.runPromise(prepareUsdbSongFiles(params))
     console.log('Download result:', result)
     return result
   } catch (err) {

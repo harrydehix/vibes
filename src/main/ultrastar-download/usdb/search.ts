@@ -1,33 +1,15 @@
 import { Effect } from 'effect'
-import { API_URL } from './config.js'
+import { USDB_API_URL } from './config.js'
+import type { UsdbSong, UsdbSearchPage, UsdbSearchParams } from '../../../shared/types'
 
 /* Code by: https://github.com/martiinii/UltraStar-CLI */
 
-export type Song = {
-  apiId: number
-  artist: string
-  title: string
-  languages: string[]
-}
-
-export type Page = {
-  totalPages: number
-  songs: Song[]
-}
-
-export type SearchParams = {
-  interpret?: string // artist name
-  title?: string // song title
-  limit?: number // max 100
-  start?: number // pagination offset
-}
-
 /**
  * Parse single song result
- * @param html HTML string from parseSongsFromSearch
- * @returns Song object with id, artist, title and languages fields
+ * @param html HTML string from parseUsdbSearchPage
+ * @returns UsdbSong object with id, artist, title and languages fields
  */
-export const parseSongFromTable = (html: string | undefined): Song | null => {
+export const parseUsdbSongFromTable = (html: string | undefined): UsdbSong | null => {
   if (!html) return null
 
   const songId = Number.parseInt(html.match(/show_detail\((\d+)\)/)?.[1] ?? '-1')
@@ -49,18 +31,18 @@ export const parseSongFromTable = (html: string | undefined): Song | null => {
 
 /**
  * Parse songs from search result as page
- * @param html HTML string from searchPage
- * @returns Page object with totalPages and songs fields
+ * @param html HTML response from the USDB search page
+ * @returns UsdbSearchPage object with totalPages and songs fields
  */
-export const parseSongsFromSearch = (html: string): Page => {
+export const parseUsdbSearchPage = (html: string): UsdbSearchPage => {
   const totalPages = Number.parseInt(
     html.match(/<br>There are\s+\d+\s+results? on\s+(\d+)\s+page/)?.[1] ?? '0'
   )
 
   const songsHtml = [...html.matchAll(/<tr class="list_tr[12].*?>\s*([\s\S]*?)\s*<\/tr>/gm)]
   const songs = songsHtml
-    .map((s) => parseSongFromTable(s?.[1]))
-    .filter((s): s is Song => Boolean(s))
+    .map((s) => parseUsdbSongFromTable(s?.[1]))
+    .filter((s): s is UsdbSong => Boolean(s))
 
   return {
     totalPages,
@@ -78,7 +60,7 @@ const normalizeStart = (start: number | undefined): number => {
   return Math.max(0, Math.floor(start))
 }
 
-const buildFormBody = (params: SearchParams): URLSearchParams => {
+const buildFormBody = (params: UsdbSearchParams): URLSearchParams => {
   const form = new URLSearchParams()
   // Static params
   form.set('order', 'lastchange')
@@ -98,17 +80,17 @@ const buildFormBody = (params: SearchParams): URLSearchParams => {
 }
 
 /**
- * Scrape the search page and parse results into a Page object.
+ * Scrape the USDB search page and parse results into a UsdbSearchPage object.
  */
-export const searchSongs = (
-  params: SearchParams,
+export const searchUsdbSongs = (
+  params: UsdbSearchParams,
   cookie?: string
-): Effect.Effect<Page, Error, never> =>
+): Effect.Effect<UsdbSearchPage, Error, never> =>
   Effect.gen(function* () {
     const form = buildFormBody(params)
     const response = yield* Effect.tryPromise({
       try: async () =>
-        await fetch(`${API_URL}/?link=list`, {
+        await fetch(`${USDB_API_URL}/?link=list`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
@@ -130,5 +112,5 @@ export const searchSongs = (
       catch: (e) => (e instanceof Error ? e : new Error('Failed to read response body'))
     })
 
-    return parseSongsFromSearch(html)
+    return parseUsdbSearchPage(html)
   })

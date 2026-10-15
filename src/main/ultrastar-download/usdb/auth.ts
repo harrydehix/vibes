@@ -1,14 +1,14 @@
 import { Effect } from 'effect'
-import { API_URL } from './config.js'
+import { USDB_API_URL } from './config.js'
 
 /* Code by: https://github.com/martiinii/UltraStar-CLI */
 
-export type Credentials = {
+export type UsdbCredentials = {
   user: string
   pass: string
 }
 
-const buildLoginForm = ({ user, pass }: Credentials): URLSearchParams => {
+const buildLoginForm = ({ user, pass }: UsdbCredentials): URLSearchParams => {
   const form = new URLSearchParams()
   form.set('user', user)
   form.set('pass', pass)
@@ -48,12 +48,12 @@ const extractCookieHeader = (response: Response): string | null => {
 /**
  * Perform login and return a Cookie header string to be used in subsequent requests
  */
-export const login = (credentials: Credentials): Effect.Effect<string, Error, never> =>
+export const loginUsdb = (credentials: UsdbCredentials): Effect.Effect<string, Error, never> =>
   Effect.gen(function* () {
     const form = buildLoginForm(credentials)
     const response = yield* Effect.tryPromise({
       try: async () =>
-        await fetch(`${API_URL}/index.php?link=login`, {
+        await fetch(`${USDB_API_URL}/index.php?link=login`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded'

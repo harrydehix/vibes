@@ -141,7 +141,7 @@ async function animateOut() {
         playsinline
         :class="`${$style.videoPlayer} ${settings.settings?.value?.highContrastMode ? $style.highContrast : ''}`"
       ></video>
-      <SimpleKaraokeLyrics />
+      <SimpleKaraokeLyrics v-if="player.currentSong.value?.lyricsTiming !== 'video'" />
       <PlayerPauseMenu :animation-before-leave="animateOut" />
       <div :class="`${$style.timeOffset} ${showTimeOffset ? '' : $style.hidden}`">
         <div :class="$style.slider">{{ settings.settings?.value?.syncOffsetMs }} ms</div>

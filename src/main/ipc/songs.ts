@@ -1,10 +1,11 @@
-import { readdir, readFile, writeFile } from 'fs/promises'
-import { Line, Note, Song, VibesSongMeta } from '../../shared/types'
+import { lstat, readdir, readFile, realpath, rm, writeFile } from 'fs/promises'
+import { Line, Note, Song, SongDeleteResponse, VibesSongMeta } from '../../shared/types'
 import { settingsManager } from './settings'
 import { ipcMain } from 'electron'
 import { IPC_CHANNELS } from '../../shared/ipc'
 import path from 'path'
 import { v4 as uuidv4 } from 'uuid'
+import { parseSongManifest, parseSongSource, songManifestFile } from '../song-import/manifest'
 
 function parseSongFile(
   content: string,
@@ -14,6 +15,7 @@ function parseSongFile(
   meta: VibesSongMeta
 ): Song {
   const result: Song = {
+    lyricsTiming: 'syllable',
     meta,
     title: 'Untitled',
     artist: 'Unknown Artist',
@@ -287,6 +289,22 @@ class SongManager {
       return this._songs
     })
 
+    ipcMain.handle(
+      IPC_CHANNELS.SONGS.DELETE,
+      async (_, id: string): Promise<SongDeleteResponse> => {
+        try {
+          await this._deleteSong(id)
+          return { ok: true, songs: this._songs }
+        } catch (error) {
+          console.error('Song deletion failed:', error)
+          return {
+            ok: false,
+            error: 'Could not delete this song. Close any player using it and try again.'
+          }
+        }
+      }
+    )
+
     ipcMain.handle(IPC_CHANNELS.SONGS.FIX_OFFSET, async (_, song: Song, songOffsetMs: number) => {
       await this._fixSong(song, songOffsetMs)
     })
@@ -298,6 +316,31 @@ class SongManager {
         await writeFile(`${song.folder}/meta.vibes`, JSON.stringify(song.meta), 'utf-8')
       }
     })
+  }
+
+  /** Resolve an existing identity, never a renderer-supplied filesystem path. */
+  private async _deleteSong(id: string): Promise<void> {
+    if (typeof id !== 'string' || !id) throw new Error('A song ID is required')
+    if (this._refreshPromise) await this._refreshPromise
+    const matches = this._songs.filter((song) => song.meta.id === id)
+    if (matches.length !== 1) throw new Error('The song could not be uniquely identified')
+    const song = matches[0]
+    const folder = path.resolve(song.folder)
+    const info = await lstat(folder)
+    if (!info.isDirectory() || info.isSymbolicLink())
+      throw new Error('Only regular song folders can be deleted')
+    const realFolder = await realpath(folder)
+    // Physical immediate children only: never delete a library root or follow a directory link.
+    const roots = await Promise.all(
+      settingsManager.settings.songFolders.map((root) => realpath(root).catch(() => null))
+    )
+    if (roots.includes(realFolder) || !roots.includes(path.dirname(realFolder)))
+      throw new Error('The song folder is outside the configured song libraries')
+    await rm(folder, { recursive: true, maxRetries: 3, retryDelay: 100 })
+    if (this._refreshPromise) await this._refreshPromise
+    this._songs = this._songs
+      .filter((entry) => path.resolve(entry.folder) !== folder)
+      .map((entry, index) => ({ ...entry, index }))
   }
 
   private async _fixSong(song: Song, songOffsetMs: number): Promise<Song> {
@@ -322,15 +365,20 @@ class SongManager {
   private async _loadSong(folder: string, index: number): Promise<Song> {
     // find every *.txt file in folder
     const files = await readdir(folder, { withFileTypes: true })
+    const manifestFile = files.find((file) => file.isFile() && file.name === songManifestFile)
     const songFilePath = files.filter((file) => file.isFile() && file.name.endsWith('.txt'))[0]
-    if (!songFilePath) {
-      throw new Error(`No song txt file found in folder: ${folder}`)
+    if (!manifestFile && !songFilePath) {
+      throw new Error(`No song manifest or UltraStar file found in folder: ${folder}`)
     }
-    const songFile = await readFile(`${folder}/${songFilePath.name}`, 'utf-8')
+    const songFile = await readFile(
+      path.join(folder, (manifestFile ?? songFilePath)!.name),
+      'utf-8'
+    )
     let fixOffset = 0
     try {
       const offsetContent = await readFile(`${folder}/offset.fix`, 'utf-8')
-      fixOffset = parseInt(offsetContent.trim())
+      const offset = Number(offsetContent.trim())
+      if (Number.isFinite(offset)) fixOffset = offset
     } catch (_) {}
 
     let meta: VibesSongMeta
@@ -346,7 +394,20 @@ class SongManager {
       }
     }
 
-    const parsedSong = parseSongFile(songFile, folder, index, fixOffset, meta)
+    const parsedSong = manifestFile
+      ? parseSongManifest(songFile, folder, index, fixOffset, meta)
+      : parseSongFile(songFile, folder, index, fixOffset, meta)
+    if (!manifestFile) {
+      try {
+        parsedSong.source = parseSongSource(
+          JSON.parse(await readFile(path.join(folder, 'source.vibes'), 'utf-8'))
+        )
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          console.warn(`Could not read song provenance: ${folder}`, error)
+        }
+      }
+    }
     console.log(
       `Loaded song: ${parsedSong.title} by ${parsedSong.artist} (index: ${parsedSong.index}, id: ${parsedSong.meta.id})`
     )
@@ -364,12 +425,10 @@ class SongManager {
 
         let songIndex = 0
         for (const folder of songFolders) {
-          // a song is always a folder and contains at least a song.txt file
-          // loop through subfolders
           const songs = await readdir(folder, { withFileTypes: true, recursive: false })
           for (let i = 0; i < songs.length; i++) {
             const song = songs[i]
-            if (!song.isDirectory()) continue
+            if (!song.isDirectory() || song.name.startsWith('.import-')) continue
             try {
               const parsedSong = await this._loadSong(`${folder}/${song.name}`, songIndex)
               newSongs.push(parsedSong)

@@ -1,4 +1,4 @@
-import { Song } from '@shared/types'
+import { Song, SongDeleteResponse } from '@shared/types'
 import { inject, onMounted, provide, ref } from 'vue'
 
 export function useSongs() {
@@ -12,6 +12,12 @@ export function useSongs() {
     songs.value = await window.api.songs.refresh()
   }
 
+  const deleteSong = async (song: Song): Promise<SongDeleteResponse> => {
+    const result = await window.api.songs.deleteSong(song.meta.id)
+    if (result.ok) songs.value = result.songs
+    return result
+  }
+
   const songPlayed = async (song: Song) => {
     await window.api.songs.songPlayed(song.meta.id)
     song.meta.playCount++
@@ -20,6 +26,7 @@ export function useSongs() {
   const songApi = {
     songs,
     refresh,
+    deleteSong,
     songPlayed
   }
 

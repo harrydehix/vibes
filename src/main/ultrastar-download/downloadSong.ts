@@ -1,28 +1,16 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Effect } from 'effect'
-import { downloadCoverById } from './usdb/cover'
-import { getLyricsById } from './usdb/lyrics'
-import type { Song } from './usdb/search'
-import type { YoutubeLink } from './usdb/youtube'
-import { getYoutubeLinksById } from './usdb/youtube'
+import { downloadUsdbCoverById } from './usdb/cover'
+import { getUsdbLyricsById } from './usdb/lyrics'
+import type { UsdbDownloadParams, SongImportResult } from '../../shared/types'
+import type { UsdbYoutubeLink } from './usdb/youtube'
+import { getUsdbYoutubeLinksById } from './usdb/youtube'
 import { downloadYoutubeVideoWithProgress } from './youtube/download'
 import type { YoutubeVideo } from './youtube/search'
 import { searchYoutubeVideos } from './youtube/search'
 
 /* Code by: https://github.com/martiinii/UltraStar-CLI */
-
-export type DownloadSongParams = {
-  song: Song
-  cookie: string
-  baseDir?: string // defaults to CWD/songs
-  onProgress?: (p: number) => void // 0..1
-}
-
-export type DownloadSongResult = {
-  dirName: string
-  songDir: string
-}
 
 export const sanitizeForPath = (name: string) =>
   name
@@ -31,9 +19,9 @@ export const sanitizeForPath = (name: string) =>
     .replace(/\./g, '')
     .trim()
 
-export const downloadSong = (
-  params: DownloadSongParams
-): Effect.Effect<DownloadSongResult, Error> =>
+export const prepareUsdbSongFiles = (
+  params: UsdbDownloadParams
+): Effect.Effect<SongImportResult, Error> =>
   Effect.gen(function* () {
     const { song, cookie, onProgress } = params
     const baseDir = params.baseDir ?? join(process.cwd(), 'songs')
@@ -52,8 +40,8 @@ export const downloadSong = (
 
     // Resolve YouTube link first
     let videoLink: string | null = null
-    const links = yield* Effect.catchAll(getYoutubeLinksById(song.apiId, cookie), () =>
-      Effect.succeed<YoutubeLink[]>([])
+    const links = yield* Effect.catchAll(getUsdbYoutubeLinksById(song.apiId, cookie), () =>
+      Effect.succeed<UsdbYoutubeLink[]>([])
     )
     if (links.length > 0) {
       videoLink = links[0]?.link ?? null
@@ -75,7 +63,7 @@ export const downloadSong = (
 
     // Parallel: cover, lyrics, and video download (with progress)
     const coverEff = Effect.gen(function* () {
-      const coverBytes = yield* Effect.catchAll(downloadCoverById(song.apiId, cookie), () =>
+      const coverBytes = yield* Effect.catchAll(downloadUsdbCoverById(song.apiId, cookie), () =>
         Effect.succeed<Uint8Array | null>(null)
       )
       if (coverBytes) {
@@ -89,7 +77,7 @@ export const downloadSong = (
     })
 
     const lyricsEff = Effect.gen(function* () {
-      const parsed = yield* getLyricsById(song.apiId, cookie)
+      const parsed = yield* getUsdbLyricsById(song.apiId, cookie)
       if (!parsed) return
       const headers = {
         ...parsed.headers,
@@ -119,5 +107,5 @@ export const downloadSong = (
     // run in parallel
     yield* Effect.all([coverEff, lyricsEff, videoEff], { concurrency: 3 })
 
-    return { dirName, songDir } as DownloadSongResult
+    return { dirName, songDir }
   })

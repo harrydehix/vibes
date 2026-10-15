@@ -1,11 +1,14 @@
 import { ref } from 'vue'
-import type { UsdbSong, DownloadSongResult } from '@shared/types'
+import type { UsdbSong, SongImportResult, ImportCandidate, SongImportRequest } from '@shared/types'
+import { DownloadError, getDownloadErrorCode, getDownloadErrorMessage } from '@shared/errors'
 import { accessSongs } from './useSongs'
+import { searchSources, type SourceSearchResult } from '../utils/searchSources'
 
 export type DownloadState = {
-  song: UsdbSong
+  candidate: ImportCandidate
   progress: number
   status: 'downloading' | 'completed' | 'error'
+  error?: string
 }
 
 // Globaler State für alle Downloads, damit Komponenten ihn teilen können
@@ -14,34 +17,37 @@ let isListenerAttached = false
 const ignoreSongsWithSameTitleAndArtist = true
 
 export function useDownloader() {
-  const { songs: downloadedSongs } = accessSongs()
+  const { songs: downloadedSongs, refresh } = accessSongs()
 
   if (!isListenerAttached && window.api?.downloader) {
-    window.api.downloader.onProgress((song, progress) => {
-      const downloadState = downloads.value.find((d) => d.song.apiId === song.apiId)
+    window.api.downloader.onProgress((candidate, progress) => {
+      const downloadState = downloads.value.find(
+        (entry) =>
+          entry.candidate.source === candidate.source && entry.candidate.id === candidate.id
+      )
       if (downloadState) {
         if (progress > downloadState.progress) {
           downloadState.progress = progress
         }
       } else {
-        downloads.value.push({ song, progress, status: 'downloading' })
+        downloads.value.push({ candidate, progress, status: 'downloading' })
       }
     })
     isListenerAttached = true
   }
 
-  async function search(params: { search: string }): Promise<UsdbSong[]> {
+  async function searchUsdb(params: { search: string }): Promise<UsdbSong[]> {
     let unfilteredResults: UsdbSong[]
     if (params.search.includes('-')) {
       const [interpret, title] = params.search.split('-').map((part) => part.trim())
-      let response = await window.api.downloader.search({
+      let response = await window.api.downloader.searchUsdb({
         interpret,
         title,
         limit: 100,
         start: 0
       })
       if (response.songs.length === 0) {
-        response = await window.api.downloader.search({
+        response = await window.api.downloader.searchUsdb({
           interpret: title,
           title: interpret,
           limit: 100,
@@ -51,12 +57,12 @@ export function useDownloader() {
 
       unfilteredResults = response.songs
     } else {
-      const byTitle = await window.api.downloader.search({
+      const byTitle = await window.api.downloader.searchUsdb({
         title: params.search,
         limit: 50,
         start: 0
       })
-      const byArtist = await window.api.downloader.search({
+      const byArtist = await window.api.downloader.searchUsdb({
         interpret: params.search,
         limit: 50,
         start: 0
@@ -92,32 +98,104 @@ export function useDownloader() {
     return filteredResults
   }
 
-  async function download(song: UsdbSong): Promise<DownloadSongResult | null> {
+  async function importSong(request: SongImportRequest): Promise<SongImportResult | null> {
+    const candidate = request.candidate
+    let downloadState = downloads.value.find(
+      (entry) => entry.candidate.source === candidate.source && entry.candidate.id === candidate.id
+    )
+    if (downloadState?.status === 'downloading') return null
+    if (!downloadState) {
+      downloads.value.push({ candidate, progress: 0, status: 'downloading' })
+      downloadState = downloads.value[downloads.value.length - 1]
+    } else {
+      downloadState.candidate = candidate
+      downloadState.progress = 0
+      downloadState.status = 'downloading'
+      downloadState.error = undefined
+    }
     try {
-      if (!downloads.value.find((d) => d.song.apiId === song.apiId)) {
-        downloads.value.push({ song, progress: 0, status: 'downloading' })
-      }
-      const result = await window.api.downloader.download({ song, cookie: '' })
-      const downloadState = downloads.value.find((d) => d.song.apiId === song.apiId)
-      await new Promise((resolve) => setTimeout(resolve, 1500))
-      if (downloadState) {
-        downloadState.progress = 1
-        downloadState.status = 'completed'
+      const response = await window.api.downloader.download(JSON.parse(JSON.stringify(request)))
+      if (!response.ok) throw new DownloadError(response.error.code)
+      const result = response.result
+      downloadState.progress = 1
+      downloadState.status = 'completed'
+      try {
+        await refresh()
+      } catch (error) {
+        console.warn('Song imported, but the library could not be refreshed:', error)
       }
       return result
     } catch (error) {
-      console.error(`Download failed for song ${song.apiId}:`, error)
-      const downloadState = downloads.value.find((d) => d.song.apiId === song.apiId)
-      if (downloadState) {
-        downloadState.status = 'error'
-      }
+      console.error(`Import failed for ${candidate.source}:${candidate.id}:`, error)
+      downloadState.status = 'error'
+      downloadState.error = getDownloadErrorMessage(getDownloadErrorCode(error))
       return null
     }
   }
 
+  async function downloadUsdbSong(song: UsdbSong): Promise<SongImportResult | null> {
+    return await importSong({
+      candidate: {
+        source: 'usdb',
+        id: String(song.apiId),
+        title: song.title,
+        artist: song.artist,
+        song
+      }
+    })
+  }
+
+  async function inspectYoutube(
+    url: string
+  ): Promise<Extract<ImportCandidate, { source: 'youtube' }>> {
+    return await window.api.downloader.inspectYoutube(url)
+  }
+
+  function cancelYoutubeSearch(): void {
+    void window.api.downloader.searchYoutube('').catch(() => {})
+  }
+
+  async function searchAll(
+    query: string,
+    onResult?: (result: SourceSearchResult) => void
+  ): Promise<SourceSearchResult> {
+    return await searchSources(
+      query,
+      [
+        {
+          name: 'USDB',
+          search: async (query) =>
+            (await searchUsdb({ search: query })).map((song) => ({
+              source: 'usdb' as const,
+              id: String(song.apiId),
+              title: song.title,
+              artist: song.artist,
+              song
+            }))
+        },
+        {
+          name: 'YouTube',
+          search: async (query) =>
+            (await window.api.downloader.searchYoutube(query)).filter(
+              (candidate) =>
+                !downloadedSongs.value.some(
+                  (song) =>
+                    song.source?.provider === candidate.source && song.source.id === candidate.id
+                )
+            )
+        }
+      ],
+      onResult
+    )
+  }
+
   return {
     downloads,
-    search,
-    download
+    search: searchUsdb,
+    download: downloadUsdbSong,
+    importSong,
+    inspectYoutube,
+    cancelYoutubeSearch,
+    searchAll
   }
 }
