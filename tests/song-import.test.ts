@@ -1,15 +1,16 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import path from 'node:path'
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { loadTestModule } from './helpers.ts'
-import { parseSongManifest } from '../src/main/song-import/manifest.ts'
+import { parseSongManifest } from '../src/main/song-management/formats/manifest.ts'
 import type { SongManifest } from '../src/shared/types.ts'
 import type { ImportCandidate } from '../src/shared/types.ts'
 import * as downloadErrors from '../src/shared/errors.ts'
 import type { SongImportRequest } from '../src/shared/types.ts'
-import { createYoutubeImportFixture } from './fixtures.ts'
+import { createYoutubeImportFixture, createSongDeletionFixture, manifest } from './fixtures.ts'
+import * as songTypes from '../src/shared/types.ts'
 
 test('YouTube lyrics-video imports download only media and load with empty captions', async (context) => {
   const fixture = await createYoutubeImportFixture(context)
@@ -179,13 +180,13 @@ test('song import reports invalid, duplicate and concurrent requests with typed 
   const folder = await mkdtemp(path.join(tmpdir(), 'vibes-import-errors-'))
   context.after(() => rm(folder, { recursive: true, force: true }))
   const source = await readFile(
-    new URL('../src/main/song-import/index.ts', import.meta.url),
+    new URL('../src/main/song-management/import.ts', import.meta.url),
     'utf8'
   )
   const importer = loadTestModule(source, {
     '../../shared/errors': downloadErrors,
-    '../ultrastar-download/usdbDownloader': { downloadUsdbSong: () => {} },
-    './youtube': { importYoutube: async () => {} }
+    './providers/usdb/index': { downloadUsdbSong: () => {} },
+    './providers/youtube/index': { importYoutube: async () => {} }
   }).importSong as (
     request: SongImportRequest,
     folder: string,
@@ -229,4 +230,97 @@ test('song import reports invalid, duplicate and concurrent requests with typed 
     (await readdir(folder)).some((name) => name.startsWith('.import-')),
     false
   )
+})
+
+test('downloadSong returns a parsed library entry and cleans failed staging or publication', async (context) => {
+  const fixture = await createSongDeletionFixture(context)
+  let invalidManifest = false
+  const importer = loadTestModule(
+    await readFile(new URL('../src/main/song-management/import.ts', import.meta.url), 'utf8'),
+    {
+      '../../shared/errors': downloadErrors,
+      './providers/usdb/index': {},
+      './providers/youtube/index': {
+        importYoutube: async (
+          request: SongImportRequest,
+          folder: string,
+          progress: (value: number) => void
+        ) => {
+          await writeFile(
+            path.join(folder, 'song.vibes.json'),
+            JSON.stringify(
+              invalidManifest
+                ? {}
+                : { ...manifest(), source: { provider: 'youtube', id: request.candidate.id } }
+            )
+          )
+          await writeFile(path.join(folder, 'video.mp4'), 'test media')
+          progress(1)
+        }
+      }
+    }
+  )
+  const service = loadTestModule(
+    await readFile(new URL('../src/main/song-management/index.ts', import.meta.url), 'utf8'),
+    {
+      '../../shared/errors': downloadErrors,
+      '../../shared/types': songTypes,
+      '../settings/index': { basePathForDownload: fixture.root },
+      './library': { songManager: fixture.manager },
+      './import': importer,
+      './search': {},
+      './providers/usdb/index': {},
+      './providers/youtube/index': {}
+    }
+  ) as typeof import('../src/main/song-management/index.ts')
+  const request: SongImportRequest = {
+    candidate: {
+      source: 'youtube',
+      id: 'video000000',
+      title: 'Song',
+      artist: 'Artist',
+      url: 'https://www.youtube.com/watch?v=video000000',
+      tracks: [],
+      lyricsInVideo: true
+    },
+    title: 'Song',
+    artist: 'Artist',
+    lyricsInVideo: true
+  }
+  const progress: number[] = []
+  await assert.rejects(
+    service.downloadSong({} as SongImportRequest, () => {}),
+    { code: 'invalid_request' }
+  )
+  const song = await service.downloadSong(request, (_candidate, value) => progress.push(value))
+  assert.equal(song.folder, path.join(fixture.root, 'youtube-video000000'))
+  assert.ok(song.lines.P1.length)
+  assert.ok(song.meta.id)
+  assert.equal(song.meta.playCount, 0)
+  assert.equal(song.meta.favorite, false)
+  assert.equal(
+    JSON.parse(await readFile(path.join(song.folder, 'meta.vibes'), 'utf8')).id,
+    song.meta.id
+  )
+  assert.equal(fixture.manager.songs[0], song)
+  assert.equal(progress.at(-1), 1)
+  assert.ok(progress.slice(0, -1).every((value) => value <= 0.99))
+  await assert.rejects(
+    service.downloadSong(request, () => {}),
+    { code: 'already_imported' }
+  )
+  const next = { ...request, candidate: { ...request.candidate, id: 'video000001' } }
+  invalidManifest = true
+  await assert.rejects(service.downloadSong(next, () => {}))
+  assert.deepEqual(await readdir(fixture.root), ['youtube-video000000'])
+  invalidManifest = false
+  fixture.manager.addSong = async () => {
+    throw new Error('Final library read failed')
+  }
+  await assert.rejects(
+    service.downloadSong(next, () => {}),
+    /Final library read failed/
+  )
+  assert.deepEqual(await readdir(fixture.root), ['youtube-video000000'])
+  assert.equal(fixture.manager.songs.length, 1)
 })

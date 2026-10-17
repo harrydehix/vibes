@@ -3,24 +3,114 @@ import { test } from 'node:test'
 import { readFile } from 'node:fs/promises'
 import { loadTestModule } from './helpers.ts'
 import { EventEmitter } from 'node:events'
-import { effectScope, nextTick, onScopeDispose, ref, watch } from 'vue'
+import { computed, effectScope, nextTick, onScopeDispose, ref, watch } from 'vue'
 import * as youtubeUrl from '../src/shared/youtubeUrl.ts'
 import type { ImportCandidate } from '../src/shared/types.ts'
-import { discoverCaptionedMusic, isMusicVideo } from '../src/main/song-import/discovery.ts'
-import { searchSources } from '../src/renderer/src/utils/searchSources.ts'
+import {
+  discoverCaptionedMusic,
+  isMusicVideo
+} from '../src/main/song-management/providers/youtube/discovery.ts'
+import type { useSongManagement } from '../src/renderer/src/composables/useSongManagement.ts'
 import { IPC_CHANNELS } from '../src/shared/ipc.ts'
 import * as downloadErrors from '../src/shared/errors.ts'
+import * as songTypes from '../src/shared/types.ts'
+import { parseSongManifest } from '../src/main/song-management/formats/manifest.ts'
 import {
   videoId,
   canonicalUrl,
   youtubeCandidate,
+  folder,
+  manifest,
+  meta,
   createYoutubeImportFixture,
   createYoutubeSearchFixture
 } from './fixtures.ts'
 
-test('remote song search debounces text, opens YouTube links directly and ignores superseded requests', async (context) => {
+test('unified song search filters providers, marks library matches and sorts by query similarity', async () => {
   const source = await readFile(
-    new URL('../src/renderer/src/composables/useRemoteSongSearch.ts', import.meta.url),
+    new URL('../src/main/song-management/search.ts', import.meta.url),
+    'utf8'
+  )
+  const { default: Fuse } = await import('fuse.js')
+  const search = loadTestModule(source, {
+    'fuse.js': { default: Fuse },
+    '../../shared/errors': downloadErrors,
+    '../../shared/types': songTypes
+  }).searchSongs as typeof import('../src/main/song-management/search.ts').searchSongs
+  const song = parseSongManifest(
+    JSON.stringify({ ...manifest(), title: 'Exact song', artist: 'Artist' }),
+    folder,
+    0,
+    0,
+    { ...meta, id: 'saved', playCount: 7 }
+  )
+  const candidate = { ...youtubeCandidate(videoId), title: 'Exact song', artist: 'Artist' }
+  const calls: string[] = []
+  const providers = {
+    youtube: async () => {
+      calls.push('youtube')
+      return [
+        { ...candidate, id: 'other', title: 'Unrelated track', artist: 'Someone' },
+        { ...candidate, id: 'live', title: 'Exact song live' },
+        candidate,
+        candidate
+      ]
+    },
+    usdb: async () => {
+      calls.push('usdb')
+      throw new downloadErrors.DownloadError('network_error')
+    }
+  }
+  const offline = await search('Exact song', { providers: ['local'] }, [song], providers)
+  assert.deepEqual(calls, [])
+  assert.equal(offline.songs[0].song.meta.playCount, 7)
+  assert.equal(offline.songs[0].downloaded, true)
+  const combined = await search('Exact song', {}, [song], providers)
+  assert.equal(combined.songs.length, 3)
+  assert.equal(combined.songs[0].downloaded, true)
+  assert.equal(combined.songs[0].candidate?.id, videoId)
+  assert.equal(combined.songs[1].id, 'live')
+  assert.equal(combined.songs[2].id, 'other')
+  assert.equal(combined.errors[0].code, 'network_error')
+  const empty = await search('', {}, [song], providers)
+  assert.equal(empty.songs.length, 1)
+  assert.equal(calls.length, 2)
+  assert.equal((await search('song', { providers: [] }, [song], providers)).songs.length, 0)
+  assert.equal(calls.length, 2)
+  await assert.rejects(
+    search(
+      'query',
+      { providers: ['invalid'] } as unknown as songTypes.SongSearchOptions,
+      [],
+      providers
+    ),
+    /valid song/
+  )
+})
+
+test('API results expose typed codes without leaking private error messages', () => {
+  assert.equal(
+    downloadErrors.getApiErrorCode(new Error('private path'), 'library_unavailable'),
+    'library_unavailable'
+  )
+  assert.equal(downloadErrors.getApiErrorCode({ code: 'EACCES' }), 'access_denied')
+  assert.equal(
+    downloadErrors.getApiErrorCode(new downloadErrors.ApiError('song_not_found')),
+    'song_not_found'
+  )
+  assert.equal(downloadErrors.unwrapApiResult({ ok: true, value: 42 }), 42)
+  assert.throws(
+    () => downloadErrors.unwrapApiResult({ ok: false, error: { code: 'unsafe_path' } }),
+    (error: unknown) =>
+      error instanceof downloadErrors.ApiError &&
+      error.code === 'unsafe_path' &&
+      !error.message.includes('private')
+  )
+})
+
+test('song management debounces all search IPC by 300 ms and ignores superseded requests', async (context) => {
+  const source = await readFile(
+    new URL('../src/renderer/src/composables/useSongManagement.ts', import.meta.url),
     'utf8'
   )
   const timers = new Map<
@@ -31,6 +121,7 @@ test('remote song search debounces text, opens YouTube links directly and ignore
     }
   >()
   const queries: string[] = []
+  const calls: { query: string; options?: songTypes.SongSearchOptions }[] = []
   const inspections: string[] = []
   let inspectedVideo: Extract<
     ImportCandidate,
@@ -49,7 +140,6 @@ test('remote song search debounces text, opens YouTube links directly and ignore
   let now = 0
   let timerId = 0
   const state = {
-    searchTimeout: { value: null as number | null },
     selectedYoutube: {
       value: null as Extract<
         ImportCandidate,
@@ -58,55 +148,78 @@ test('remote song search debounces text, opens YouTube links directly and ignore
         }
       > | null
     },
-    searchErrors: { value: [] as string[] },
+    searchErrors: { value: [] as downloadErrors.ApiFailure[] },
     availableForDownloadSongs: { value: [] as ImportCandidate[] },
-    locallySearchedSongs: { value: [] },
-    locallyLoading: { value: false },
     onlineLoading: { value: false },
-    localFuseSearch: { value: { search: () => [] } },
-    downloader: {
-      cancelYoutubeSearch: () => {},
-      searchAll: async (query: string) => {
-        queries.push(query)
-      },
-      inspectYoutube: async (url: string) => {
-        inspections.push(url)
-        if (inspectionFailure) throw inspectionFailure
-        return inspectedVideo
-      }
-    },
-    URL,
-    getDownloadErrorCode: downloadErrors.getDownloadErrorCode,
-    getDownloadErrorMessage: downloadErrors.getDownloadErrorMessage,
     console: { error: () => {} },
     clearTimeout: (id: number) => timers.delete(id),
+    setTimeout: (run: () => Promise<void>, delay: number) => {
+      const id = ++timerId
+      timers.set(id, { due: now + delay, callback: run })
+      return id
+    },
     window: {
-      setTimeout: (run: () => Promise<void>, delay: number) => {
-        const id = ++timerId
-        timers.set(id, { due: now + delay, callback: run })
-        return id
+      api: {
+        songs: {
+          onDownloadProgress: () => () => {},
+          searchSongs: async (query: string, options?: songTypes.SongSearchOptions) => {
+            calls.push({ query, options })
+            if (!query.trim() || options?.providers)
+              return { ok: true, value: { songs: [], errors: [] } }
+            if (!youtubeUrl.isYoutubeLink(query)) {
+              queries.push(query)
+              return { ok: true, value: { songs: [], errors: [] } }
+            }
+            inspections.push(query)
+            if (inspectionFailure)
+              return {
+                ok: false,
+                error: { code: downloadErrors.getApiErrorCode(inspectionFailure) }
+              }
+            const candidate = {
+              ...inspectedVideo,
+              lyricsInVideo: inspectedVideo.tracks.length === 0
+            }
+            return {
+              ok: true,
+              value: {
+                songs: [
+                  {
+                    provider: 'youtube',
+                    id: candidate.id,
+                    title: candidate.title,
+                    artist: candidate.artist,
+                    downloaded: false,
+                    candidate
+                  }
+                ],
+                errors: []
+              }
+            }
+          }
+        }
       }
     }
   }
   const useSearch = loadTestModule(
     source,
     {
-      vue: { ref, watch, onScopeDispose },
+      vue: { computed, ref, watch, onScopeDispose, provide: () => {}, onMounted: () => {} },
       '@shared/errors': downloadErrors,
       '@shared/youtubeUrl': youtubeUrl
     },
     state
-  ).useRemoteSongSearch as (
-    search: ReturnType<typeof ref<string>>,
-    downloader: typeof state.downloader
-  ) => object
-  const search = ref('')
+  ).useSongManagement as typeof useSongManagement
   const scope = effectScope()
   context.after(() => scope.stop())
-  Object.assign(
-    state,
-    scope.run(() => useSearch(search, state.downloader))
-  )
+  const management = scope.run(() => useSearch())!
+  const search = management.query
+  Object.assign(state, {
+    selectedYoutube: management.selectedYoutube,
+    searchErrors: management.searchErrors,
+    availableForDownloadSongs: management.availableResults,
+    onlineLoading: management.searching
+  })
   const changeSearch = async (query: string): Promise<void> => {
     if (search.value === query) {
       search.value = ''
@@ -125,52 +238,61 @@ test('remote song search debounces text, opens YouTube links directly and ignore
   await changeSearch('song')
   now = 150
   await changeSearch('song title')
-  now = 549
+  now = 449
   await runDueTimers()
+  assert.equal(calls.length, 0)
   assert.deepEqual(queries, [])
-  now = 550
+  now = 450
   await runDueTimers()
+  assert.equal(calls.length, 2)
+  assert.deepEqual(Array.from(calls[0].options?.providers ?? []), ['local'])
+  assert.equal(calls[1].options, undefined)
   assert.deepEqual(queries, ['song title'])
   await changeSearch('another song')
   await changeSearch(' ')
+  assert.equal(calls.length, 2)
   now = 1000
   await runDueTimers()
   assert.deepEqual(queries, ['song title'])
   assert.equal(state.onlineLoading.value, false)
   await changeSearch(`  ${canonicalUrl}  `)
-  now += 400
+  now += 300
   await runDueTimers()
   assert.deepEqual(inspections, [canonicalUrl])
   assert.deepEqual(queries, ['song title'])
-  assert.deepEqual(state.selectedYoutube.value, inspectedVideo)
-  assert.deepEqual(Array.from(state.availableForDownloadSongs.value), [inspectedVideo])
+  assert.deepEqual(state.selectedYoutube.value, { ...inspectedVideo, lyricsInVideo: false })
+  assert.deepEqual(Array.from(state.availableForDownloadSongs.value), [
+    { ...inspectedVideo, lyricsInVideo: false }
+  ])
   assert.equal(state.onlineLoading.value, false)
   inspectedVideo = { ...inspectedVideo, tracks: [] }
   await changeSearch(`https://youtu.be/${videoId}`)
-  now += 400
+  now += 300
   await runDueTimers()
   assert.equal(state.selectedYoutube.value?.lyricsInVideo, true)
   assert.equal(state.selectedYoutube.value?.tracks.length, 0)
   assert.deepEqual(queries, ['song title'])
   inspectionFailure = new Error('YouTube is limiting requests. Wait before retrying.')
   await changeSearch(canonicalUrl)
-  now += 400
+  now += 300
   await runDueTimers()
   assert.equal(state.selectedYoutube.value, null)
-  assert.deepEqual(Array.from(state.searchErrors.value), [
-    'YouTube is limiting requests. Please try again later.'
-  ])
+  assert.deepEqual(
+    Array.from(state.searchErrors.value, (failure) => failure.code),
+    ['rate_limited']
+  )
   assert.equal(state.onlineLoading.value, false)
   inspectionFailure = new Error('Private diagnostic details')
   await changeSearch(canonicalUrl)
-  now += 400
+  now += 300
   await runDueTimers()
-  assert.deepEqual(Array.from(state.searchErrors.value), [
-    'Could not load this YouTube video. Check the link and try again.'
-  ])
+  assert.deepEqual(
+    Array.from(state.searchErrors.value, (failure) => failure.code),
+    ['unknown']
+  )
   inspectionFailure = null
   await changeSearch(canonicalUrl)
-  now += 400
+  now += 300
   const pending = runDueTimers()
   await changeSearch(' ')
   await pending
@@ -180,7 +302,7 @@ test('remote song search debounces text, opens YouTube links directly and ignore
   assert.equal(state.onlineLoading.value, false)
   inspectionFailure = new Error('Stale private diagnostic')
   await changeSearch(canonicalUrl)
-  now += 400
+  now += 300
   const staleFailure = runDueTimers()
   await changeSearch('new song')
   await staleFailure
@@ -543,7 +665,7 @@ test('fast YouTube search stops queued inspections on cancellation and does not 
 
 test('YouTube search IPC cancels stale searches and direct links preserve default captions with safe fallback', async (context) => {
   const source = await readFile(
-    new URL('../src/main/ipc/downloaderManager.ts', import.meta.url),
+    new URL('../src/main/song-management/ipc.ts', import.meta.url),
     'utf8'
   )
   const handlers = new Map<string, (event: object, query: string) => Promise<unknown>>()
@@ -575,20 +697,17 @@ test('YouTube search IPC cancels stale searches and direct links preserve defaul
   const manager = loadTestModule(
     source,
     {
-      electron: {
-        ipcMain: {
-          handle: (name: string, handler: (event: object, query: string) => Promise<unknown>) =>
-            handlers.set(name, handler)
-        }
+      '../utils/ipcHandle': {
+        handleApi: (name: string, handler: (event: object, query: string) => Promise<unknown>) =>
+          handlers.set(name, handler)
       },
       '../../shared/ipc': { IPC_CHANNELS },
       '../../shared/errors': downloadErrors,
-      '../ultrastar-download/usdbDownloader': { searchUsdb: () => {} },
-      './settings': { basePathForDownload: 'fixture-folder' },
-      '../song-import': { importSong: () => {} },
-      '../song-import/youtube': {
-        inspectYoutubeWithDefaultCaptions: fixture.inspect,
-        searchYoutube: (query: string, signal: AbortSignal) => {
+      './index': {
+        getSongs: async () => [],
+        searchSongs: (query: string, _options: object, signal?: AbortSignal) => {
+          if (!query.trim()) return Promise.resolve({ songs: [], errors: [] })
+          assert.ok(signal)
           requests.push({ query, signal })
           return new Promise((_, reject) => {
             signal.addEventListener('abort', () => reject(signal.reason), { once: true })
@@ -597,11 +716,11 @@ test('YouTube search IPC cancels stale searches and direct links preserve defaul
       }
     },
     { AbortController }
-  ).downloaderManager as {
-    defineIpcHandles: () => Promise<void>
+  ) as {
+    defineSongIpc: () => Promise<void>
   }
-  await manager.defineIpcHandles()
-  const search = handlers.get(IPC_CHANNELS.DOWNLOADER.SEARCH_YOUTUBE)!
+  await manager.defineSongIpc()
+  const search = handlers.get(IPC_CHANNELS.SONGS.SEARCH)!
   const sender = Object.assign(new EventEmitter(), { id: 7 })
   const first = assert.rejects(search({ sender }, 'First'), { name: 'AbortError' })
   const second = assert.rejects(search({ sender }, 'Second'), { name: 'AbortError' })
@@ -615,32 +734,22 @@ test('YouTube search IPC cancels stale searches and direct links preserve defaul
   sender.emit('destroyed')
   await third
   assert.equal(sender.listenerCount('destroyed'), 0)
-  const inspect = handlers.get(IPC_CHANNELS.DOWNLOADER.INSPECT_YOUTUBE)! as (
-    event: object,
-    url: string
-  ) => Promise<
-    Extract<
-      ImportCandidate,
-      {
-        source: 'youtube'
-      }
-    >
-  >
-  const original = await inspect({}, canonicalUrl)
+  const inspect = fixture.inspect
+  const original = await inspect(canonicalUrl)
   assert.equal(original.tracks[0].isDefault, undefined)
   assert.equal(original.tracks[1].isDefault, true)
   mainId = 'manual:de'
-  const manual = await inspect({}, canonicalUrl)
+  const manual = await inspect(canonicalUrl)
   assert.equal(manual.tracks[0].isDefault, true)
   assert.equal(manual.tracks[1].isDefault, undefined)
   mainId = 'manual:fr'
-  const unmatched = await inspect({}, canonicalUrl)
+  const unmatched = await inspect(canonicalUrl)
   assert.equal(
     unmatched.tracks.some((track) => track.isDefault),
     false
   )
   defaultsUnavailable = true
-  const fallback = await inspect({}, canonicalUrl)
+  const fallback = await inspect(canonicalUrl)
   assert.equal(
     fallback.tracks.some((track) => track.isDefault),
     false
@@ -649,7 +758,7 @@ test('YouTube search IPC cancels stale searches and direct links preserve defaul
   fixture.metadata.subtitles = {}
   fixture.metadata.automatic_captions = {}
   const checks = defaultChecks
-  assert.equal((await inspect({}, canonicalUrl)).tracks.length, 0)
+  assert.equal((await inspect(canonicalUrl)).tracks.length, 0)
   assert.equal(defaultChecks, checks)
 })
 
@@ -702,41 +811,52 @@ test('a complete YouTube inspection failure is reported instead of silently retu
 })
 
 test('combined search sends the same query to each source and retains partial results on failure', async () => {
-  const queries: string[] = []
-  const updates: number[] = []
-  const result = await searchSources(
-    'Artist - Title',
-    [
-      {
-        name: 'USDB',
-        search: async (query) => {
-          queries.push(query)
-          throw new Error('Offline')
-        }
-      },
-      {
-        name: 'YouTube',
-        search: async (query) => {
-          queries.push(query)
-          return [youtubeCandidate('song')]
-        }
-      }
-    ],
-    (result) => updates.push(result.pending)
+  const source = await readFile(
+    new URL('../src/main/song-management/search.ts', import.meta.url),
+    'utf8'
   )
+  const { default: Fuse } = await import('fuse.js')
+  const search = loadTestModule(source, {
+    'fuse.js': { default: Fuse },
+    '../../shared/errors': downloadErrors,
+    '../../shared/types': songTypes
+  }).searchSongs as typeof import('../src/main/song-management/search.ts').searchSongs
+  const queries: string[] = []
+  const candidate = { ...youtubeCandidate('song'), title: 'Title', artist: 'Artist' }
+  const result = await search('Artist - Title', {}, [], {
+    usdb: async (query) => {
+      queries.push(query)
+      throw new downloadErrors.DownloadError('network_error')
+    },
+    youtube: async (query) => {
+      queries.push(query)
+      return [candidate]
+    }
+  })
   assert.deepEqual(queries, ['Artist - Title', 'Artist - Title'])
-  assert.equal(result.candidates.length, 1)
-  assert.match(result.errors[0], /USDB: Offline/)
-  assert.equal(result.pending, 0)
-  assert.deepEqual(updates, [1, 0])
+  assert.equal(result.songs.length, 1)
+  assert.equal(result.errors[0].provider, 'usdb')
+  assert.equal(result.errors[0].code, 'network_error')
 })
 
 test('combined search deduplicates by source identity and skips empty queries', async () => {
   const candidate = youtubeCandidate('song')
-  const provider = {
-    name: 'YouTube',
-    search: async (): Promise<ImportCandidate[]> => [candidate, candidate]
+  const source = await readFile(
+    new URL('../src/main/song-management/search.ts', import.meta.url),
+    'utf8'
+  )
+  const { default: Fuse } = await import('fuse.js')
+  const search = loadTestModule(source, {
+    'fuse.js': { default: Fuse },
+    '../../shared/errors': downloadErrors,
+    '../../shared/types': songTypes
+  }).searchSongs as typeof import('../src/main/song-management/search.ts').searchSongs
+  const providers = {
+    youtube: async (): Promise<ImportCandidate[]> => [candidate, candidate],
+    usdb: async () => []
   }
-  assert.equal((await searchSources('song', [provider])).candidates.length, 1)
-  assert.deepEqual(await searchSources(' ', [provider]), { candidates: [], errors: [], pending: 0 })
+  assert.equal((await search('song', {}, [], providers)).songs.length, 1)
+  const empty = await search(' ', {}, [], providers)
+  assert.equal(empty.songs.length, 0)
+  assert.equal(empty.errors.length, 0)
 })

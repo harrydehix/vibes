@@ -102,11 +102,13 @@ test('lyrics rows split long pauses inside a phrase without losing or retiming s
 for (const timing of ['phrase', 'syllable'] as const) {
   test(`rendered ${timing} lyrics show a filling pause cue synchronized with playback, seeking and offsets`, async (context) => {
     const lyrics = [line(5000, 6000, 'First line'), line(10000, 11000, 'Next line')]
+    lyrics[1].syllables[0].isGolden = true
     const currentSong = vue.ref({ index: 0, lyricsTiming: timing, lines: { P1: lyrics, P2: [] } })
     const settings = vue.ref<{
       syncOffsetMs: number
       lyricsFontScale: number
       lyricsAlignment?: 'left' | 'center'
+      lowPerformanceMode?: boolean
     }>({ syncOffsetMs: 0, lyricsFontScale: 1 })
     let currentTime = 0
     const songOffsetPreviewMs = vue.ref<number | null>(null)
@@ -206,6 +208,21 @@ for (const timing of ['phrase', 'syllable'] as const) {
       host.querySelector<HTMLElement>('[role="progressbar"][data-active="true"]')
     const progress = (): number => Number(indicator()?.getAttribute('aria-valuenow'))
     const track = host.querySelector<HTMLElement>('.track')!
+    if (timing === 'syllable') {
+      const golden = track.querySelector<HTMLElement>('.golden')!
+      assert.equal(golden.textContent, 'Next line')
+      assert.equal(track.querySelectorAll('.golden').length, 1)
+      assert.equal(golden.classList.contains('glitter'), true)
+      assert.equal(window.getComputedStyle(golden).animationPlayState, 'paused')
+      assert.match(window.getComputedStyle(golden).backgroundImage, /radial-gradient/)
+      assert.equal(window.getComputedStyle(golden).backgroundClip, 'text')
+      settings.value.lowPerformanceMode = true
+      await vue.nextTick()
+      assert.equal(golden.classList.contains('glitter'), false)
+      assert.match(window.getComputedStyle(golden).color, /^(#f5cb66|rgb\(245, 203, 102\))$/)
+      settings.value.lowPerformanceMode = false
+      await vue.nextTick()
+    }
     assert.equal(track.classList.contains('centered'), false)
     settings.value.lyricsAlignment = 'center'
     await vue.nextTick()
@@ -272,13 +289,25 @@ for (const timing of ['phrase', 'syllable'] as const) {
     await tick(10)
     assert.equal(indicator(), null)
     assert.equal(scrollPositions.at(-1), -44)
-    if (timing === 'syllable') assert.equal(highlighted.at(-1)?.textContent, 'Next line')
+    if (timing === 'syllable') {
+      assert.equal(highlighted.at(-1)?.textContent, 'Next line')
+      assert.equal(
+        window.getComputedStyle(track.querySelector('.golden')!).animationPlayState,
+        'running'
+      )
+    }
     await tick(12)
     assert.equal(indicator(), null)
     const previousAnimations = animations.slice()
     await tick(0)
     assert.equal(progress(), 0)
     assert.equal(window.getComputedStyle(indicator()!).opacity, '1')
+    if (timing === 'syllable') {
+      assert.equal(
+        window.getComputedStyle(track.querySelector('.golden')!).animationPlayState,
+        'paused'
+      )
+    }
     assert.ok(previousAnimations.every((animation) => animation.killed))
     for (const span of track.querySelectorAll('span')) {
       assert.equal(span.style.opacity, '')
@@ -358,13 +387,12 @@ test('F opens a nonmodal live song-offset editor; Apply saves and Escape closes 
     }
   }
   const songs = {
-    songPlayed: () => undefined,
-    fixOffset: async (_song: unknown, value: number) => {
+    updateSong: async (_id: string, patch: { fixOffsetMs: number }) => {
       saveAttempts++
       if (failSave) throw new Error('Private disk diagnostic')
-      saved.push(value)
+      saved.push(patch.fixOffsetMs)
     },
-    refresh: async () => {
+    getSongs: async () => {
       refreshCalls++
       const value = saved.at(-1)!
       currentSong.value = {
@@ -381,7 +409,7 @@ test('F opens a nonmodal live song-offset editor; Apply saves and Escape closes 
       accessSongPlayer: () => player,
       useSongPlayer: () => player
     },
-    '@renderer/composables/useSongs': { accessSongs: () => songs },
+    '@renderer/composables/useSongManagement': { accessSongManagement: () => songs },
     '@renderer/composables/useSettings': { accessSettings: () => ({ settings }) },
     '@renderer/composables/useController': {
       accessController: () => ({ controller: vue.ref(null) })
@@ -526,13 +554,13 @@ for (const scenario of [
         scenario === 'failed-after-save' ? () => reject(new Error('Disk write failed')) : resolve
     })
     const songs = {
-      fixOffset: async () => {
+      updateSong: async () => {
         saveCalls++
         if (scenario === 'failed') throw new Error('Disk write failed')
         if (scenario.endsWith('after-save') && saveCalls === 1) return
         await pendingSave
       },
-      refresh: async () => {
+      getSongs: async () => {
         refreshCalls++
       }
     }
@@ -545,7 +573,7 @@ for (const scenario of [
         vue,
         '@vueuse/core': { onKeyStroke },
         '@renderer/composables/useSongPlayer': { accessSongPlayer: () => player },
-        '@renderer/composables/useSongs': { accessSongs: () => songs }
+        '@renderer/composables/useSongManagement': { accessSongManagement: () => songs }
       },
       { document, HTMLElement, console: { error: () => undefined } }
     )

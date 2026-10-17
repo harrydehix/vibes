@@ -1,7 +1,6 @@
 /// <reference types="vite/client" />
 
-// Importiere nur den Typ aus dem Preload-Skript, nicht den echten Code!
-import type { AppAPI } from '../../preload/index'
+import type { AppAPI } from '../../shared/api'
 
 // Erweitere das globale Window-Objekt des Browsers
 declare global {

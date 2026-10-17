@@ -4,7 +4,7 @@ import { accessSongPlayer } from '@renderer/composables/useSongPlayer'
 import { getLyricsRows, type LyricsRow } from '@renderer/utils/singingPauses'
 import type { Line } from '@shared/types'
 import { gsap } from 'gsap'
-import { computed, onMounted, onUnmounted, ref, watch, nextTick } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch, nextTick, useCssModule } from 'vue'
 
 const videoPlayer = accessSongPlayer()
 const phraseTiming = computed(() => videoPlayer.currentSong.value?.lyricsTiming === 'phrase')
@@ -21,6 +21,7 @@ const virtualizationEnabled = ref(false)
 const lyricsMode = ref<'scale-active-syllable' | 'highlight-left-to-right'>(
   'highlight-left-to-right'
 )
+const $style = useCssModule()
 const syllableTimelines = new Set<gsap.core.Timeline>()
 let lastMediaTimeMs: number | null = null
 
@@ -147,6 +148,7 @@ watch(
   }
 )
 
+const activePauseRef = ref<HTMLElement[]>([])
 const syncTimeline = () => {
   if (videoPlayer.video.value) {
     const mediaTimeMs = videoPlayer.getCurrentTime() * 1000
@@ -171,8 +173,21 @@ const syncTimeline = () => {
     if (newLine && activeRow?.kind === 'lyrics') {
       console.log(`P1: ${activeRow.syllables.map((syllable) => syllable.text).join('')}`)
     }
-    if (!phraseTiming.value && activeRow?.kind === 'lyrics')
+    if (!phraseTiming.value && activeRow?.kind === 'lyrics') {
       activeSyllableEffect(activeLineIndex, time, newLine)
+    }
+
+    if (activeRow?.kind === 'pause') {
+      const notes = lineDivs.value[activeLineIndex]?.querySelectorAll(
+        `.${$style.pauseNote}`
+      ) as NodeListOf<HTMLElement>
+      notes?.forEach((note) => note.classList.add($style.active))
+      activePauseRef.value = Array.from(notes ?? [])
+    } else {
+      if (activePauseRef.value.length) {
+        activePauseRef.value.forEach((el) => el.classList.remove($style.active))
+      }
+    }
   }
 }
 
@@ -384,6 +399,10 @@ onUnmounted(() => {
             <span
               v-for="(syllable, syllableIndex) in row.syllables"
               :key="syllable.text + syllableIndex"
+              :class="{
+                [$style.golden]: syllable.isGolden,
+                [$style.glitter]: syllable.isGolden && !settings?.lowPerformanceMode
+              }"
               >{{ syllable.text }}</span
             >
           </template>
@@ -468,11 +487,25 @@ onUnmounted(() => {
   background-color: rgba(165, 105, 234, 0.25);
 }
 
+@keyframes wiggleAnimation {
+  from {
+    transform: rotate(-10deg);
+  }
+  to {
+    transform: rotate(10deg);
+  }
+}
+
 .pauseNote {
   grid-area: 1 / 1;
   width: 4rem;
   height: 4rem;
   color: rgba(255, 255, 255, 0.3);
+  animation: none;
+  &.active {
+    animation: wiggleAnimation 1s infinite alternate;
+    animation-timing-function: ease-in-out;
+  }
 }
 
 .pauseFill {
@@ -517,6 +550,54 @@ onUnmounted(() => {
     opacity: 0.5;
     display: inline-block;
     white-space: pre;
+  }
+}
+
+.golden {
+  color: #f5cb66;
+}
+
+.glitter {
+  color: transparent;
+  background-color: #f5cb66;
+  background-image:
+    radial-gradient(circle at 20% 35%, #fffbed 0 0.015em, transparent 0.055em),
+    radial-gradient(circle at 70% 65%, #fffbed 0 0.02em, transparent 0.06em),
+    linear-gradient(105deg, transparent 38%, #fff4bf 48%, white 50%, #ffedaa 52%, transparent 62%);
+  background-size:
+    0.65em 0.8em,
+    0.9em 0.65em,
+    250% 100%;
+  background-position:
+    0 0,
+    0.2em 0.1em,
+    150% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  text-shadow: none;
+  animation: goldenShimmer 2.8s linear infinite;
+  animation-play-state: paused;
+  text-shadow: 0 0 5px rgba(255, 255, 255, 0.2);
+}
+
+.lyricsLine[data-active='true'] .glitter {
+  animation-play-state: running;
+}
+
+@keyframes goldenShimmer {
+  to {
+    background-position:
+      0.65em 0.8em,
+      -0.7em -0.55em,
+      -150% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glitter {
+    animation: none;
+    background-image: none;
+    color: #f5cb66;
   }
 }
 

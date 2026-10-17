@@ -4,7 +4,8 @@ import { useBackgroundMusic } from './composables/useBackgroundMusic'
 import { useController } from './composables/useController'
 import PlayerSettings from './components/PlayerSettings.vue'
 import { useSettings } from './composables/useSettings'
-import { useSongs } from './composables/useSongs'
+import { useSongManagement } from './composables/useSongManagement'
+import { useUpdater } from './composables/useUpdater'
 import { useRoute } from 'vue-router'
 import UpdatePopup from './components/UpdatePopup.vue'
 import YoutubeAuthPopup from './components/YoutubeAuthPopup.vue'
@@ -12,7 +13,8 @@ import YoutubeAuthPopup from './components/YoutubeAuthPopup.vue'
 useController()
 const settings = useSettings()
 useBackgroundMusic(false, settings)
-useSongs()
+useSongManagement()
+useUpdater()
 
 const settingsOpened = ref(false)
 provide('settingsOpened', settingsOpened)

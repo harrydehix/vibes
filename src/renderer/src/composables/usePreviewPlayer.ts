@@ -1,5 +1,5 @@
 import { ref, computed, watch, onUnmounted, provide, inject } from 'vue'
-import { accessSongs } from './useSongs'
+import { accessSongManagement } from './useSongManagement'
 import { accessLocalFile } from '@renderer/utils/accessLocalFile'
 import gsap from 'gsap'
 import { accessSettings } from './useSettings'
@@ -8,7 +8,7 @@ export function usePreviewPlayer(
   startIndex: number = 0,
   previewDefaultDurationSeconds: number = 20
 ) {
-  const songsApi = accessSongs()
+  const songsApi = accessSongManagement()
   const { settings } = accessSettings()
   const video = ref<HTMLVideoElement | null>(null)
   const audio = ref<HTMLAudioElement>(new Audio())

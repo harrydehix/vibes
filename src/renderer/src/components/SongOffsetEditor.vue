@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { accessSongPlayer } from '@renderer/composables/useSongPlayer'
-import { accessSongs } from '@renderer/composables/useSongs'
+import { accessSongManagement } from '@renderer/composables/useSongManagement'
 import { onKeyStroke } from '@vueuse/core'
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 
 const player = accessSongPlayer()
-const songs = accessSongs()
+const songs = accessSongManagement()
 const opened = ref(false)
 const draft = ref('')
 const saving = ref(false)
@@ -76,7 +76,7 @@ async function apply(): Promise<void> {
   saving.value = true
   error.value = null
   try {
-    await songs.fixOffset(song, value)
+    await songs.updateSong(song.meta.id, { fixOffsetMs: value })
     refreshNeeded = true
     if (!unmounted && player.currentSong.value?.meta.id === song.meta.id) {
       appliedOffsetMs = value
@@ -104,7 +104,7 @@ watch(
 function refreshSavedSongs(): void {
   if (!refreshNeeded) return
   refreshNeeded = false
-  void songs.refresh().catch((cause) => {
+  void songs.getSongs().catch((cause) => {
     console.error('Could not reload saved song offsets:', cause)
   })
 }

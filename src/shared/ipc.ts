@@ -6,10 +6,11 @@ export const IPC_CHANNELS = {
   },
   SONGS: {
     GET: 'songs:get',
-    REFRESH: 'songs:refresh',
+    SEARCH: 'songs:search',
+    DOWNLOAD: 'songs:download',
     DELETE: 'songs:delete',
-    FIX_OFFSET: 'songs:fixOffset',
-    SONG_PLAYED: 'songs:songPlayed'
+    UPDATE: 'songs:update',
+    PROGRESS: 'songs:downloadProgress'
   },
   DIALOG: {
     OPEN_FOLDER: 'dialog:openFolder'
@@ -22,14 +23,10 @@ export const IPC_CHANNELS = {
     SIGN_OUT: 'youtube-auth:signOut',
     CHANGED: 'youtube-auth:changed'
   },
-  DOWNLOADER: {
-    SEARCH_USDB: 'downloader:search',
-    SEARCH_YOUTUBE: 'downloader:searchYoutube',
-    INSPECT_YOUTUBE: 'downloader:inspectYoutube',
-    DOWNLOAD: 'downloader:download',
-    PROGRESS: 'downloader:progress'
-  },
   APP_UPDATE: {
+    CHECK: 'app-update:check',
+    AVAILABLE: 'app-update:available',
+    ERROR: 'app-update:error',
     PROGRESS: 'app-update:progress',
     DOWNLOADED: 'app-update:downloaded',
     INSTALL: 'app-update:install'

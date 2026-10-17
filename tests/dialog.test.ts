@@ -5,11 +5,12 @@ import { readFile } from 'node:fs/promises'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import * as vue from 'vue'
 import type { Component } from 'vue'
-import type { Song, SongDeleteResponse } from '../src/shared/types.ts'
+import type { Song } from '../src/shared/types.ts'
 import * as captionTracks from '../src/shared/captionTracks.ts'
+import * as apiErrors from '../src/shared/errors.ts'
 import { loadTestModule, loadVueComponent } from './helpers.ts'
 import { computed, effectScope, nextTick, reactive, ref, watch } from 'vue'
-import { parseSongManifest } from '../src/main/song-import/manifest.ts'
+import { parseSongManifest } from '../src/main/song-management/formats/manifest.ts'
 import { folder, meta, manifest } from './fixtures.ts'
 
 const domGlobals = { document, HTMLElement, console }
@@ -33,6 +34,7 @@ async function loadComponent(
       vue,
       gsap: { default: animations },
       '@renderer/composables/useSound': { useSound: () => ({ play: () => {} }) },
+      '@shared/errors': apiErrors,
       ...modules
     },
     domGlobals,
@@ -152,7 +154,7 @@ test('rendered song deletion displays disk errors and restores focus after remov
       meta: { id, playCount: 0, favorite: false }
     }) as Song
   const songs = vue.ref([song('first', 0), song('second', 1)])
-  let response: SongDeleteResponse = { ok: false, error: 'Could not delete this song.' }
+  let response: apiErrors.ApiResult<Song[]> = { ok: false, error: { code: 'access_denied' } }
   const preview = {
     songs,
     currentIndex: vue.ref(0),
@@ -174,13 +176,14 @@ test('rendered song deletion displays disk errors and restores focus after remov
     '@renderer/composables/useSettingsView': {
       useSettingsView: () => ({ settingsOpened: vue.ref(false) })
     },
-    '@renderer/composables/useSongs': {
-      accessSongs: () => ({
+    '@renderer/composables/useSongManagement': {
+      accessSongManagement: () => ({
         songs,
-        refresh: () => {},
+        getSongs: async () => [],
         deleteSong: async () => {
-          if (response.ok) songs.value = response.songs
-          return response
+          if (response.ok) songs.value = response.value
+          else throw new apiErrors.ApiError(response.error.code)
+          return songs.value
         }
       })
     },
@@ -203,7 +206,7 @@ test('rendered song deletion displays disk errors and restores focus after remov
   await settle()
   assert.equal(
     dialog.querySelector('[role="alert"]')?.textContent,
-    response.error,
+    !response.ok && apiErrors.getApiErrorMessage(response.error.code),
     document.body.innerHTML
   )
   assert.equal(songs.value.length, 2)
@@ -212,7 +215,7 @@ test('rendered song deletion displays disk errors and restores focus after remov
   assert.equal(document.activeElement, opener)
   opener.click()
   await settle()
-  response = { ok: true, songs: [song('second', 0)] }
+  response = { ok: true, value: [song('second', 0)] }
   document.querySelector<HTMLButtonElement>('[role="dialog"] button')!.click()
   await settle()
   assert.equal(opener.isConnected, false)
@@ -237,16 +240,19 @@ test('rendered YouTube import focuses metadata, selects main captions and displa
       candidate: video,
       status: 'error',
       progress: 0,
-      error: 'YouTube is limiting requests. Please try again later.'
+      error: { code: 'rate_limited' as const }
     }
   ])
   const component = await loadComponent('components/YoutubeImport.vue', {
     './Popup.vue': { default: await loadPopup() },
     '@shared/captionTracks': captionTracks,
-    '@renderer/composables/useDownloader': {
-      useDownloader: () => ({ downloads, importSong: async () => null })
+    '@renderer/composables/useSongManagement': {
+      accessSongManagement: () => ({
+        songs: vue.ref([]),
+        downloads,
+        downloadSong: async () => null
+      })
     },
-    '@renderer/composables/useSongs': { accessSongs: () => ({ songs: vue.ref([]) }) },
     '@renderer/assets/cover-fallback.png': { default: 'cover' }
   })
   mount(context, component, { video })
@@ -257,7 +263,10 @@ test('rendered YouTube import focuses metadata, selects main captions and displa
   assert.equal(inputs[0].value, 'Song')
   assert.equal(inputs[1].value, 'Artist')
   assert.equal(dialog.querySelector('select')!.value, 'auto:en')
-  assert.equal(dialog.querySelector('[role="alert"]')?.textContent, downloads.value[0].error)
+  assert.equal(
+    dialog.querySelector('[role="alert"]')?.textContent,
+    apiErrors.getApiErrorMessage(downloads.value[0].error.code)
+  )
 })
 
 test('carousel song deletion requires confirmation, prevents repeats, handles failure and exits an empty library', async (context) => {
@@ -272,17 +281,21 @@ test('carousel song deletion requires confirmation, prevents repeats, handles fa
     id: 'first'
   })
   const second = { ...first, index: 1, meta: { ...first.meta, id: 'second' } }
+  first.artist = 'Zulu'
+  second.artist = 'alpha'
+  second.title = 'Zulu song'
   const songs = ref([first, second])
   const requests: string[] = []
   const navigation: object[] = []
   const keys = new Map<string, (event: { preventDefault: () => void }) => void>()
   let stops = 0
   let reloads = 0
-  let response: SongDeleteResponse = { ok: false, error: 'Could not delete this song.' }
+  let response: apiErrors.ApiResult<Song[]> = { ok: false, error: { code: 'access_denied' } }
+  const currentIndex = ref(0)
   const preview = {
     songs,
-    currentIndex: ref(0),
-    currentSong: computed(() => songs.value[0]),
+    currentIndex,
+    currentSong: computed(() => songs.value[currentIndex.value]),
     video: ref(null),
     stop: () => {
       stops++
@@ -295,6 +308,7 @@ test('carousel song deletion requires confirmation, prevents repeats, handles fa
     script.content,
     {
       vue: {
+        computed,
         ref,
         watch,
         nextTick,
@@ -305,24 +319,31 @@ test('carousel song deletion requires confirmation, prevents repeats, handles fa
       },
       '@renderer/components/LeavePopup.vue': {},
       '@renderer/components/Popup.vue': {},
+      '@shared/errors': apiErrors,
       '@renderer/composables/useBackgroundMusic': {
         accessBackgroundMusic: () => ({ disable: () => {} })
       },
       '@renderer/composables/useController': {
         accessController: () => ({ controller: ref(null) })
       },
-      '@renderer/composables/usePreviewPlayer': { usePreviewPlayer: () => preview },
+      '@renderer/composables/usePreviewPlayer': {
+        usePreviewPlayer: (index: number) => {
+          currentIndex.value = index
+          return preview
+        }
+      },
       '@renderer/composables/useSettingsView': {
         useSettingsView: () => ({ settingsOpened: ref(false) })
       },
-      '@renderer/composables/useSongs': {
-        accessSongs: () => ({
+      '@renderer/composables/useSongManagement': {
+        accessSongManagement: () => ({
           songs,
-          refresh: () => {},
-          deleteSong: async (song: Song) => {
-            requests.push(song.meta.id)
-            if (response.ok) songs.value = response.songs
-            return response
+          getSongs: async () => [],
+          deleteSong: async (id: string) => {
+            requests.push(id)
+            if (response.ok) songs.value = response.value
+            else throw new apiErrors.ApiError(response.error.code)
+            return songs.value
           }
         })
       },
@@ -347,6 +368,9 @@ test('carousel song deletion requires confirmation, prevents repeats, handles fa
       props: object,
       context: object
     ) => {
+      displayedSongs: { value: Song[] }
+      next: () => void
+      prev: () => void
       openDelete: (song: Song) => void
       closeDelete: () => void
       confirmDelete: () => Promise<void>
@@ -364,6 +388,39 @@ test('carousel song deletion requires confirmation, prevents repeats, handles fa
   const scope = effectScope()
   context.after(() => scope.stop())
   const state = scope.run(() => component.setup({}, { expose: () => {} }))!
+  assert.deepEqual(
+    Array.from(state.displayedSongs.value, (song) => song.meta.id),
+    ['second', 'first']
+  )
+  assert.deepEqual(
+    songs.value.map((song) => song.meta.id),
+    ['first', 'second']
+  )
+  assert.equal(preview.currentIndex.value, 1)
+  state.next()
+  assert.equal(preview.currentIndex.value, 0)
+  state.next()
+  assert.equal(preview.currentIndex.value, 1)
+  state.prev()
+  assert.equal(preview.currentIndex.value, 0)
+  state.prev()
+  assert.equal(preview.currentIndex.value, 1)
+  const third = {
+    ...second,
+    title: 'Another song',
+    artist: 'ALPHA',
+    index: 2,
+    meta: { ...meta, id: 'third' }
+  }
+  songs.value = [first, second, third]
+  await nextTick()
+  assert.deepEqual(
+    Array.from(state.displayedSongs.value, (song) => song.meta.id),
+    ['third', 'second', 'first']
+  )
+  assert.equal(preview.currentSong.value?.meta.id, 'second')
+  songs.value = [first, second]
+  await nextTick()
   state.openDelete(first)
   assert.equal(requests.length, 0)
   state.closeDelete()
@@ -377,7 +434,7 @@ test('carousel song deletion requires confirmation, prevents repeats, handles fa
     }
   })
   assert.equal(prevented, false)
-  assert.equal(preview.currentIndex.value, 0)
+  assert.equal(preview.currentIndex.value, 1)
   const pending = state.confirmDelete()
   assert.equal(state.deleting.value, true)
   state.closeDelete()
@@ -387,16 +444,16 @@ test('carousel song deletion requires confirmation, prevents repeats, handles fa
   assert.deepEqual(requests, ['first'])
   assert.equal(stops, 1)
   assert.equal(reloads, 1)
-  assert.equal(state.deletionError.value, 'Could not delete this song.')
+  assert.equal(state.deletionError.value, apiErrors.getApiErrorMessage('access_denied'))
   assert.equal(state.deleting.value, false)
   assert.equal(songs.value.length, 2)
-  response = { ok: true, songs: [{ ...second, index: 0 }] }
+  response = { ok: true, value: [{ ...second, index: 0 }] }
   await state.confirmDelete()
   assert.equal(state.songToDelete.value, null)
   assert.equal(songs.value[0].meta.id, 'second')
   assert.equal(navigation.length, 0)
   state.openDelete(second)
-  response = { ok: true, songs: [] }
+  response = { ok: true, value: [] }
   await state.confirmDelete()
   assert.equal(navigation.length, 1)
   assert.equal(
@@ -442,7 +499,7 @@ test('YouTube downloads use the standard popup without expanding the search resu
       candidate: typeof video
       status: 'downloading' | 'completed' | 'error'
       progress: number
-      error?: string
+      error?: apiErrors.ApiFailure
     }>
   >([])
   const songs = ref<
@@ -467,16 +524,17 @@ test('YouTube downloads use the standard popup without expanding the search resu
       watch,
       defineComponent: (value: unknown) => value
     },
-    '@renderer/composables/useDownloader': {
-      useDownloader: () => ({
+    '@renderer/composables/useSongManagement': {
+      accessSongManagement: () => ({
+        songs,
         downloads,
-        importSong: async (request: object) => {
+        downloadSong: async (request: object) => {
           requests.push(request)
           return { status: 'completed' }
         }
       })
     },
-    '@renderer/composables/useSongs': { accessSongs: () => ({ songs }) },
+    '@shared/errors': apiErrors,
     '@renderer/composables/useSound': {
       useSound: () => ({ play: (name: string) => sounds.push(name) })
     },
@@ -567,7 +625,7 @@ test('YouTube downloads use the standard popup without expanding the search resu
   assert.equal(state.downloading.value, true)
   await state.confirm()
   assert.equal(requests.length, 0)
-  downloads.value = [{ candidate: video, status: 'error', progress: 0, error: 'Try again' }]
+  downloads.value = [{ candidate: video, status: 'error', progress: 0, error: { code: 'unknown' } }]
   await state.confirm()
   assert.equal(requests.length, 1)
   assert.equal(

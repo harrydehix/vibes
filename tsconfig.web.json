@@ -4,16 +4,17 @@
     "src/renderer/src/env.d.ts",
     "src/renderer/src/**/*",
     "src/renderer/src/**/*.vue",
-    "src/preload/*.d.ts"
-, "src/main/ultrastar-download"  ],
+    "src/preload/*.d.ts",
+    "src/shared/**/*"
+  ],
   "compilerOptions": {
     "composite": true,
-    "baseUrl": ".",
+    "noEmit": true,
     "paths": {
       "@renderer/*": [
-        "src/renderer/src/*"
+        "./src/renderer/src/*"
       ],
-      "@shared/*": ["src/shared/*"]
+      "@shared/*": ["./src/shared/*"]
     }
   }
 }

@@ -4,10 +4,13 @@ import { accessSettings } from '@renderer/composables/useSettings'
 import type { YoutubeAuthStatus } from '@shared/types'
 import Popup from './Popup.vue'
 import LoadingSpinner from './LoadingSpinner.vue'
+import { useYoutubeAuth } from '@renderer/composables/useYoutubeAuth'
+import { getApiErrorCode, getApiErrorMessage } from '@shared/errors'
 
 const props = withDefaults(defineProps<{ manual?: boolean }>(), { manual: false })
 const emit = defineEmits<{ (event: 'close'): void }>()
-const { settings } = accessSettings()
+const { settings, get, update } = accessSettings()
+const youtubeAuth = useYoutubeAuth()
 const visible = ref(props.manual)
 const dismissed = ref(false)
 const busy = ref(false)
@@ -37,7 +40,7 @@ async function closePopup(): Promise<void> {
   if (settings.value) settings.value.youtubeSignInDismissed = true
   emit('close')
   try {
-    await window.api.settings.update({ youtubeSignInDismissed: true })
+    await update({ youtubeSignInDismissed: true })
   } catch {
     console.error('Could not save the YouTube sign-in popup preference.')
   }
@@ -49,23 +52,23 @@ async function perform(operation: () => Promise<void>): Promise<void> {
   try {
     await operation()
   } catch (error) {
-    message.value = error instanceof Error ? error.message : 'Could not connect to YouTube.'
+    message.value = getApiErrorMessage(getApiErrorCode(error, 'authentication_failed'))
   } finally {
     busy.value = false
   }
 }
 
 function openBrowser(): void {
-  void perform(() => window.api.youtubeAuth.openBrowser())
+  void perform(() => youtubeAuth.openBrowser())
 }
 
 function openHelp(): void {
-  void perform(() => window.api.youtubeAuth.openHelp())
+  void perform(() => youtubeAuth.openHelp())
 }
 
 function importCookies(): void {
   void perform(async () => {
-    const status = await window.api.youtubeAuth.importCookies()
+    const status = await youtubeAuth.importCookies()
     if (!active) return
     if (status.authenticated) await closePopup()
     else updateStatus(status)
@@ -73,19 +76,19 @@ function importCookies(): void {
 }
 
 onMounted(async () => {
-  unsubscribe = window.api.youtubeAuth.onChanged((status) => {
+  unsubscribe = youtubeAuth.onChanged((status) => {
     changes++
     updateStatus(status)
   })
   const version = changes
   try {
-    const saved = await window.api.settings.get()
+    const saved = await get()
     if (!active) return
     dismissed.value = saved.youtubeSignInDismissed === true
     if (settings.value) settings.value.youtubeSignInDismissed = dismissed.value
     ready = true
     if (dismissed.value && !props.manual) return
-    const status = await window.api.youtubeAuth.status()
+    const status = await youtubeAuth.status()
     if (active && changes === version) updateStatus(status)
   } catch {
     ready = true

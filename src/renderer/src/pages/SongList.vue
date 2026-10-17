@@ -5,13 +5,14 @@ import { accessBackgroundMusic } from '@renderer/composables/useBackgroundMusic'
 import { accessController } from '@renderer/composables/useController'
 import { usePreviewPlayer } from '@renderer/composables/usePreviewPlayer'
 import { useSettingsView } from '@renderer/composables/useSettingsView'
-import { accessSongs } from '@renderer/composables/useSongs'
+import { accessSongManagement } from '@renderer/composables/useSongManagement'
+import { getApiErrorCode, getApiErrorMessage } from '@shared/errors'
 import { useSound } from '@renderer/composables/useSound'
 import router from '@renderer/router'
 import { accessLocalFile } from '@renderer/utils/accessLocalFile'
 import { onKeyStroke } from '@vueuse/core'
 import gsap from 'gsap'
-import { onMounted, onUnmounted, ref, useCssModule, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, useCssModule, watch } from 'vue'
 import type { Song } from '@shared/types'
 import { useRoute } from 'vue-router'
 import defaultCover from '@renderer/assets/cover-fallback.png'
@@ -31,10 +32,31 @@ onKeyStroke('Escape', () => {
 })
 
 const route = useRoute()
+const { songs, getSongs, deleteSong } = accessSongManagement()
+const artistCollator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true })
+const displayedSongs = computed(() =>
+  [...songs.value].sort(
+    (first, second) =>
+      artistCollator.compare(first.artist, second.artist) ||
+      artistCollator.compare(first.title, second.title)
+  )
+)
 
 const previewPlayer = usePreviewPlayer(
-  route.query.songIndex ? parseInt(route.query.songIndex as string) : 0
+  route.query.songIndex
+    ? parseInt(route.query.songIndex as string)
+    : (displayedSongs.value[0]?.index ?? 0)
 )
+const carouselIndex = computed(() =>
+  displayedSongs.value.findIndex(
+    (song) => song.meta.id === previewPlayer.currentSong.value?.meta.id
+  )
+)
+watch(displayedSongs, (newSongs, previousSongs) => {
+  if (!previousSongs.length && newSongs.length && !route.query.songIndex) {
+    previewPlayer.currentIndex.value = newSongs[0].index
+  }
+})
 const backgroundMusic = accessBackgroundMusic()
 onMounted(() => {
   backgroundMusic.disable()
@@ -44,25 +66,25 @@ const { play } = useSound()
 
 function getRealIndex(index: number) {
   if (index < 0) {
-    index = previewPlayer.songs?.value.length + index
+    index = displayedSongs.value.length + index
   }
-  return index % (previewPlayer.songs?.value.length || 1)
+  return index % (displayedSongs.value.length || 1)
 }
 
 function getPositionClass(index: number) {
-  if (getRealIndex(index) === previewPlayer.currentIndex.value) {
+  if (getRealIndex(index) === carouselIndex.value) {
     return $style.current
-  } else if (getRealIndex(index - 1) === previewPlayer.currentIndex.value) {
+  } else if (getRealIndex(index - 1) === carouselIndex.value) {
     return $style.next
-  } else if (getRealIndex(index + 1) === previewPlayer.currentIndex.value) {
+  } else if (getRealIndex(index + 1) === carouselIndex.value) {
     return $style.prev
-  } else if (getRealIndex(index - 2) === previewPlayer.currentIndex.value) {
+  } else if (getRealIndex(index - 2) === carouselIndex.value) {
     return $style.farNext
-  } else if (getRealIndex(index + 2) === previewPlayer.currentIndex.value) {
+  } else if (getRealIndex(index + 2) === carouselIndex.value) {
     return $style.farPrev
-  } else if (getRealIndex(index - 3) === previewPlayer.currentIndex.value) {
+  } else if (getRealIndex(index - 3) === carouselIndex.value) {
     return $style.farFarNext
-  } else if (getRealIndex(index + 3) === previewPlayer.currentIndex.value) {
+  } else if (getRealIndex(index + 3) === carouselIndex.value) {
     return $style.farFarPrev
   } else {
     return $style.hidden
@@ -171,27 +193,31 @@ function fadeOut(callback: () => void) {
 
 function prev() {
   if (songToDelete.value) return
-  previewPlayer.currentIndex.value = getRealIndex(previewPlayer.currentIndex.value - 1)
+  const song = displayedSongs.value[getRealIndex(carouselIndex.value - 1)]
+  if (!song) return
+  previewPlayer.currentIndex.value = song.index
   play('hover')
 }
 
 function next() {
   if (songToDelete.value) return
-  previewPlayer.currentIndex.value = getRealIndex(previewPlayer.currentIndex.value + 1)
+  const song = displayedSongs.value[getRealIndex(carouselIndex.value + 1)]
+  if (!song) return
+  previewPlayer.currentIndex.value = song.index
   play('hover')
 }
 
 function clickedCover(index: number) {
-  if (index === previewPlayer.currentIndex.value) {
+  if (index === carouselIndex.value) {
     startSong()
   } else {
-    if (getRealIndex(index + 1) === previewPlayer.currentIndex.value) {
+    if (getRealIndex(index + 1) === carouselIndex.value) {
       prev()
-    } else if (getRealIndex(index - 1) === previewPlayer.currentIndex.value) {
+    } else if (getRealIndex(index - 1) === carouselIndex.value) {
       next()
-    } else if (getRealIndex(index + 2) === previewPlayer.currentIndex.value) {
+    } else if (getRealIndex(index + 2) === carouselIndex.value) {
       prev()
-    } else if (getRealIndex(index - 2) === previewPlayer.currentIndex.value) {
+    } else if (getRealIndex(index - 2) === carouselIndex.value) {
       next()
     }
   }
@@ -208,9 +234,10 @@ function navigateToSearch() {
 }
 
 function jumpToRandomSong() {
+  const song = displayedSongs.value[Math.floor(Math.random() * displayedSongs.value.length)]
+  if (!song) return
   play('click')
-  const randomIndex = Math.floor(Math.random() * (previewPlayer.songs?.value.length || 1))
-  previewPlayer.currentIndex.value = randomIndex
+  previewPlayer.currentIndex.value = song.index
 }
 
 const { settingsOpened } = useSettingsView()
@@ -219,10 +246,9 @@ function openSettings() {
   settingsOpened.value = true
 }
 
-const { songs, refresh, deleteSong } = accessSongs()
 function refreshSongs() {
   play('click')
-  refresh()
+  void getSongs().catch((error) => console.error('Could not refresh songs:', error))
 }
 
 function deleteFocusFallback(): HTMLElement | null | undefined {
@@ -252,17 +278,12 @@ async function confirmDelete(): Promise<void> {
   deletionError.value = ''
   previewPlayer.stop()
   try {
-    const result = await deleteSong(songToDelete.value)
-    if (!result.ok) {
-      deletionError.value = result.error
-      void previewPlayer.reload()
-      return
-    }
+    await deleteSong(songToDelete.value.meta.id)
     songToDelete.value = null
     if (!songs.value.length) await router.replace({ path: '/search' })
   } catch (error) {
     console.error('Song deletion failed:', error)
-    deletionError.value = 'Could not delete this song. Please try again.'
+    deletionError.value = getApiErrorMessage(getApiErrorCode(error))
     void previewPlayer.reload()
   } finally {
     deleting.value = false
@@ -310,7 +331,7 @@ async function confirmDelete(): Promise<void> {
       </div>
       <div :class="$style.carousel">
         <div
-          v-for="(song, index) in previewPlayer.songs?.value"
+          v-for="(song, index) in displayedSongs"
           :key="song.meta.id"
           :class="`${$style.song} ${getPositionClass(index)}`"
           @click="clickedCover(index)"
@@ -326,7 +347,7 @@ async function confirmDelete(): Promise<void> {
               {{ song.meta.playCount }}
             </div>
             <button
-              v-if="index === previewPlayer.currentIndex.value"
+              v-if="index === carouselIndex"
               type="button"
               :class="$style.deleteButton"
               :aria-label="`Delete ${song.title} by ${song.artist}`"

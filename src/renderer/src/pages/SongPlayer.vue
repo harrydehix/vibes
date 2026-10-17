@@ -11,7 +11,7 @@ import { onMounted, onUnmounted, ref, useCssModule, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { accessSettings } from '@renderer/composables/useSettings'
 import router from '@renderer/router'
-import { accessSongs } from '@renderer/composables/useSongs'
+import { accessSongManagement } from '@renderer/composables/useSongManagement'
 
 /* songIndex is passed via route query, e.g. /song-player?songIndex=2 */
 
@@ -92,7 +92,7 @@ function togglePlayPause() {
 
 const $style = useCssModule()
 const player = useSongPlayer()
-const { songPlayed } = accessSongs()
+const { updateSong } = accessSongManagement()
 const gsapScope = ref<null | HTMLElement>(null)
 let ctx
 watch([gsapScope, player.isLoaded], ([container, loaded]) => {
@@ -106,10 +106,26 @@ watch([gsapScope, player.isLoaded], ([container, loaded]) => {
   }
 })
 
+// After 20s songs playing increase the play count
+const increasedPlayCount = ref(false)
+watch(player.currentTime, async (time) => {
+  if (time >= 20 && !increasedPlayCount.value) {
+    const song = player.currentSong.value
+    if (song) {
+      try {
+        await updateSong(song.meta.id, { playCount: song.meta.playCount + 1 })
+        increasedPlayCount.value = true
+        console.log('Updated play count for song:', song.meta.id)
+      } catch (error) {
+        console.error('Could not update the song play count:', error)
+      }
+    }
+  }
+})
+
 watch(player.ended, async (isEnded) => {
   if (isEnded) {
     await animateOut()
-    songPlayed(player.currentSong.value!)
     router.push({
       path: '/song-list',
       query: {

@@ -1,5 +1,3 @@
-import type { SongImportResult } from './types'
-
 const downloadMessages = {
   captions_unavailable: 'The selected captions are unavailable. Please choose another track.',
   invalid_captions: 'These captions could not be read. Please choose another video.',
@@ -18,6 +16,61 @@ const downloadMessages = {
 
 export type DownloadErrorCode = keyof typeof downloadMessages
 
+const apiMessages = {
+  ...downloadMessages,
+  song_not_found: 'This song could not be uniquely identified.',
+  unsafe_path: 'This song folder cannot be deleted safely.',
+  library_unavailable: 'The song library could not be loaded.',
+  settings_failed: 'The app settings could not be saved or loaded.',
+  authentication_failed: 'The YouTube session could not be verified.',
+  secure_storage_unavailable: 'Secure session storage is unavailable.',
+  dialog_failed: 'The file dialog could not be opened.',
+  update_failed: 'The app update could not be checked or installed.',
+  update_not_ready: 'No downloaded app update is ready to install.'
+} as const
+
+export type ApiErrorCode = keyof typeof apiMessages
+export type ApiFailure = { code: ApiErrorCode }
+export type ApiResult<Value> = { ok: true; value: Value } | { ok: false; error: ApiFailure }
+
+export class ApiError extends Error {
+  readonly code: ApiErrorCode
+
+  constructor(code: ApiErrorCode) {
+    super(apiMessages[code])
+    this.name = 'ApiError'
+    this.code = code
+  }
+}
+
+export function getApiErrorCode(error: unknown, fallback: ApiErrorCode = 'unknown'): ApiErrorCode {
+  for (
+    let depth = 0, current = error;
+    depth < 5 && typeof current === 'object' && current !== null;
+    depth++
+  ) {
+    if (
+      'code' in current &&
+      typeof current.code === 'string' &&
+      Object.hasOwn(apiMessages, current.code)
+    ) {
+      return current.code as ApiErrorCode
+    }
+    current = 'cause' in current ? current.cause : undefined
+  }
+  const downloadCode = getDownloadErrorCode(error)
+  return downloadCode === 'unknown' ? fallback : downloadCode
+}
+
+export function getApiErrorMessage(code: ApiErrorCode): string {
+  return apiMessages[code]
+}
+
+export function unwrapApiResult<Value>(result: ApiResult<Value>): Value {
+  if (!result.ok) throw new ApiError(result.error.code)
+  return result.value
+}
+
 export class DownloadError extends Error {
   readonly code: DownloadErrorCode
 
@@ -27,11 +80,6 @@ export class DownloadError extends Error {
     this.name = 'DownloadError'
   }
 }
-
-/** Only whitelisted codes cross IPC; diagnostic messages and causes stay in logs. */
-export type SongDownloadResponse =
-  | { ok: true; result: SongImportResult }
-  | { ok: false; error: { code: DownloadErrorCode } }
 
 const httpRateLimitPattern =
   /\b(?:HTTP(?: Error| status)?|status(?: code)?)\s*:?\s*429\b|\bToo Many Requests\b/i

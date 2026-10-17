@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import LoadingSpinner from '@renderer/components/LoadingSpinner.vue'
 import { accessController } from '@renderer/composables/useController'
-import { accessSongs } from '@renderer/composables/useSongs'
+import { accessSongManagement } from '@renderer/composables/useSongManagement'
 import { useSound } from '@renderer/composables/useSound'
 import router from '@renderer/router'
 import gsap from 'gsap'
@@ -21,7 +21,7 @@ const { controller } = accessController()
 const loading = ref(false)
 
 const currentAnimation = ref<gsap.core.Timeline | null>(null)
-const { songs, refresh } = accessSongs()
+const { songs, getSongs: refresh } = accessSongManagement()
 
 const { play } = useSound()
 

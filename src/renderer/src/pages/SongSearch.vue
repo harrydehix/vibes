@@ -1,53 +1,40 @@
 <script setup lang="ts">
-import { accessSongs } from '@renderer/composables/useSongs'
+import { accessSongManagement } from '@renderer/composables/useSongManagement'
 import { useSound } from '@renderer/composables/useSound'
 import router from '@renderer/router'
 import { accessLocalFile } from '@renderer/utils/accessLocalFile'
 import type { Song, ImportCandidate } from '@shared/types'
-import Fuse from 'fuse.js'
-import { computed, ref, watch, onUnmounted, useCssModule, onMounted, nextTick } from 'vue'
+import { computed, ref, watch, onUnmounted, useCssModule, onMounted } from 'vue'
 import gsap from 'gsap'
 import { accessBackgroundMusic } from '@renderer/composables/useBackgroundMusic'
 import LoadingSpinner from '@renderer/components/LoadingSpinner.vue'
 import { useRoute } from 'vue-router'
-import { useDownloader } from '@renderer/composables/useDownloader'
-import { useRemoteSongSearch } from '@renderer/composables/useRemoteSongSearch'
+import { getApiErrorMessage } from '@shared/errors'
 import { onKeyStroke } from '@vueuse/core'
 import defaultCover from '@renderer/assets/cover-fallback.png'
 import YoutubeImport from '@renderer/components/YoutubeImport.vue'
 
-const { songs } = accessSongs()
+const management = accessSongManagement()
+const {
+  songs,
+  query: search,
+  selectedYoutube,
+  searching: onlineLoading,
+  searchingLocal: locallyLoading,
+  localResults: locallySearchedSongs,
+  availableResults: availableForDownloadSongs
+} = management
+search.value = ''
 const $style = useCssModule()
-const search = ref<string>('')
-const locallySearchedSongs = ref<Song[]>([])
 const sound = useSound()
 const backgroundMusic = accessBackgroundMusic()
 
-const localFuseSearch = computed(() => {
-  return new Fuse(songs.value, {
-    keys: ['title', 'artist', 'genre'],
-    threshold: 0.3
-  })
-})
-const locallyLoading = ref(true)
 const emptyState = computed(() => {
   return songs.value.length === 0 && search.value === ''
 })
 
 const gsapScope = ref<null | HTMLElement>(null)
 let ctx: gsap.Context
-
-// rerun search if songs list changes (e.g. new song downloaded)
-watch(songs, async () => {
-  if (search.value) {
-    locallyLoading.value = true
-    await nextTick()
-    const results = localFuseSearch.value.search(search.value).map((result) => result.item)
-    locallySearchedSongs.value = results
-    await nextTick()
-    locallyLoading.value = false
-  }
-})
 
 watch(gsapScope, (container) => {
   if (container) {
@@ -74,6 +61,9 @@ onMounted(() => {
 
 onUnmounted(() => {
   ctx?.revert()
+  management.cancelSearch()
+  search.value = ''
+  selectedYoutube.value = null
 })
 
 onKeyStroke('Escape', () => {
@@ -90,13 +80,15 @@ const previousSongIndex = computed(() => {
   return index !== null && !isNaN(index) ? index : null
 })
 
-const downloader = useDownloader()
-const { selectedYoutube, searchErrors, availableForDownloadSongs, onlineLoading } =
-  useRemoteSongSearch(search, downloader)
+const searchErrors = computed(() =>
+  management.searchErrors.value.map(
+    (error) => `${error.provider ? `${error.provider}: ` : ''}${getApiErrorMessage(error.code)}`
+  )
+)
 const availableResults = computed(() =>
   availableForDownloadSongs.value.map((candidate) => ({
     candidate,
-    downloadState: downloader.downloads.value.find(
+    downloadState: management.downloads.value.find(
       (entry) => entry.candidate.source === candidate.source && entry.candidate.id === candidate.id
     ),
     localSong: songs.value.find(
@@ -104,19 +96,6 @@ const availableResults = computed(() =>
     )
   }))
 )
-watch(
-  search,
-  (newSearch) => {
-    locallySearchedSongs.value = localFuseSearch.value
-      .search(newSearch)
-      .map((result) => result.item)
-    locallyLoading.value = false
-  },
-  {
-    immediate: true
-  }
-)
-
 async function playLocalSong(song: Song): Promise<void> {
   if (song) {
     sound.play('click')
@@ -157,8 +136,12 @@ async function downloadSong(candidate: ImportCandidate): Promise<void> {
     selectedYoutube.value = candidate
     return
   }
-  const result = await downloader.importSong({ candidate })
-  if (result) sound.play('downloadSuccess')
+  try {
+    await management.downloadSong({ candidate })
+    sound.play('downloadSuccess')
+  } catch (error) {
+    console.error('Song download failed:', error)
+  }
 }
 
 function displayText(value: string): string {
@@ -333,7 +316,7 @@ watch(
                   :class="$style.sourceError"
                   role="alert"
                 >
-                  {{ downloadState.error }}
+                  {{ downloadState.error ? getApiErrorMessage(downloadState.error.code) : '' }}
                 </p>
               </div>
             </div>

@@ -2,16 +2,16 @@
 import { computed, ref, watch } from 'vue'
 import type { ImportCandidate, Song } from '@shared/types'
 import { defaultCaptionTrackId } from '@shared/captionTracks'
-import { useDownloader } from '@renderer/composables/useDownloader'
-import { accessSongs } from '@renderer/composables/useSongs'
+import { accessSongManagement } from '@renderer/composables/useSongManagement'
+import { getApiErrorMessage } from '@shared/errors'
 import { useSound } from '@renderer/composables/useSound'
 import defaultCover from '@renderer/assets/cover-fallback.png'
 import Popup from './Popup.vue'
 
 const props = defineProps<{ video: Extract<ImportCandidate, { source: 'youtube' }> }>()
 const emit = defineEmits<{ play: [song: Song]; close: [] }>()
-const downloader = useDownloader()
-const { songs } = accessSongs()
+const management = accessSongManagement()
+const { songs } = management
 const sound = useSound()
 const candidate = ref<Extract<ImportCandidate, { source: 'youtube' }> | null>(null)
 const title = ref('')
@@ -19,7 +19,7 @@ const artist = ref('')
 const captionTrackId = ref('')
 const thumbnailFailed = ref(false)
 const state = computed(() =>
-  downloader.downloads.value.find(
+  management.downloads.value.find(
     (entry) => entry.candidate.source === 'youtube' && entry.candidate.id === candidate.value?.id
   )
 )
@@ -67,12 +67,16 @@ async function download(): Promise<void> {
     title: title.value,
     artist: artist.value
   }
-  const result = await downloader.importSong(
-    candidate.value.lyricsInVideo
-      ? { ...request, lyricsInVideo: true }
-      : { ...request, captionTrackId: captionTrackId.value }
-  )
-  if (result) sound.play('downloadSuccess')
+  try {
+    await management.downloadSong(
+      candidate.value.lyricsInVideo
+        ? { ...request, lyricsInVideo: true }
+        : { ...request, captionTrackId: captionTrackId.value }
+    )
+    sound.play('downloadSuccess')
+  } catch (error) {
+    console.error('YouTube download failed:', error)
+  }
 }
 </script>
 
@@ -126,7 +130,7 @@ async function download(): Promise<void> {
               </select>
             </label>
             <p v-if="state?.status === 'error'" :class="$style.error" role="alert">
-              {{ state.error }}
+              {{ state.error ? getApiErrorMessage(state.error.code) : '' }}
             </p>
           </div>
         </div>

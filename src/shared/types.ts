@@ -1,14 +1,20 @@
-export type AppSettings = {
-  songFolders: string[]
-  musicVolume: number
-  sfxVolume: number
-  lyricsFontScale: number
-  lyricsAlignment: 'left' | 'center'
-  syncOffsetMs: number
-  highContrastMode: boolean
-  lowPerformanceMode: boolean
-  youtubeSignInDismissed: boolean
-}
+import { z } from 'zod'
+
+export const AppSettingsSchema = z.object({
+  songFolders: z.array(z.string().min(1)),
+  musicVolume: z.number().min(0).max(1),
+  sfxVolume: z.number().min(0).max(1),
+  lyricsFontScale: z.number().positive(),
+  lyricsAlignment: z.enum(['left', 'center']),
+  syncOffsetMs: z.number(),
+  highContrastMode: z.boolean(),
+  lowPerformanceMode: z.boolean(),
+  youtubeSignInDismissed: z.boolean()
+})
+export type AppSettings = z.infer<typeof AppSettingsSchema>
+
+export const AppSettingsUpdateSchema = AppSettingsSchema.partial().strict()
+export type AppSettingsUpdate = z.infer<typeof AppSettingsUpdateSchema>
 
 export type YoutubeAuthStatus = {
   authenticated: boolean
@@ -73,29 +79,52 @@ export type Song = {
   meta: VibesSongMeta
 }
 
-export type VibesSongMeta = {
-  fixOffsetMs?: number
-  playCount: number
-  favorite: boolean
-  id: string
-}
+export const VibesSongMetaSchema = z.object({
+  fixOffsetMs: z.number().optional(),
+  playCount: z.number().int().nonnegative(),
+  favorite: z.boolean(),
+  id: z.string().min(1)
+})
+export type VibesSongMeta = z.infer<typeof VibesSongMetaSchema>
 
-export type Line = {
-  startTimeMs: number
-  endTimeMs: number
-  syllables: {
-    text: string
-    startTimeMs: number
-    endTimeMs: number
-  }[]
-}
+export const LineSchema = z
+  .object({
+    startTimeMs: z.number().nonnegative(),
+    endTimeMs: z.number().nonnegative(),
+    syllables: z
+      .array(
+        z.object({
+          text: z.string().refine((value) => Boolean(value.trim()), 'Missing lyric text'),
+          isGolden: z.boolean().optional(),
+          startTimeMs: z.number().nonnegative(),
+          endTimeMs: z.number().nonnegative()
+        })
+      )
+      .min(1)
+  })
+  .superRefine((line, context) => {
+    if (line.endTimeMs <= line.startTimeMs) {
+      context.addIssue({ code: 'custom', message: 'Invalid lyric cue' })
+    }
+    for (const syllable of line.syllables) {
+      if (
+        syllable.endTimeMs <= syllable.startTimeMs ||
+        syllable.startTimeMs < line.startTimeMs ||
+        syllable.endTimeMs > line.endTimeMs
+      ) {
+        context.addIssue({ code: 'custom', message: 'Invalid syllable timing' })
+      }
+    }
+  })
+export type Line = z.infer<typeof LineSchema>
 
-export type UsdbSong = {
-  apiId: number
-  artist: string
-  title: string
-  languages: string[]
-}
+export const UsdbSongSchema = z.object({
+  apiId: z.number().int().positive(),
+  artist: z.string().min(1),
+  title: z.string().min(1),
+  languages: z.array(z.string())
+})
+export type UsdbSong = z.infer<typeof UsdbSongSchema>
 
 export type UsdbSearchPage = {
   totalPages: number
@@ -121,68 +150,133 @@ export type SongImportResult = {
   songDir: string
 }
 
-export type SongSource = {
-  provider: string
-  id: string
-  url?: string
-}
+export const SongSourceSchema = z.object({
+  provider: z.string().trim().min(1),
+  id: z.string().trim().min(1),
+  url: z.string().trim().min(1).optional()
+})
+export type SongSource = z.infer<typeof SongSourceSchema>
 
-export type SongManifest = {
-  version: 1
-  source: SongSource
+export type SongProvider = 'local' | 'usdb' | 'youtube'
+
+export const SongSearchOptionsSchema = z
+  .object({
+    providers: z.array(z.enum(['local', 'usdb', 'youtube'])).optional()
+  })
+  .strict()
+export type SongSearchOptions = z.infer<typeof SongSearchOptionsSchema>
+
+export type SongSearchEntry = {
+  provider: SongProvider
+  id: string
   title: string
   artist: string
-  language: string[]
-  media: {
-    video?: string
-    audio?: string
-    cover?: string
-  }
-  lyrics: {
-    timing: 'syllable' | 'phrase' | 'video'
-    lines: Line[]
-    originalFile?: string
-    language?: string
-    automatic?: boolean
-  }
+  thumbnail?: string
+} & (
+  | { downloaded: true; song: Song; candidate?: ImportCandidate }
+  | { downloaded: false; candidate: ImportCandidate; song?: never }
+)
+
+export type SongSearchResult = {
+  songs: SongSearchEntry[]
+  errors: { provider: SongProvider; code: import('./errors').ApiErrorCode }[]
 }
 
-export type SongDeleteResponse = { ok: true; songs: Song[] } | { ok: false; error: string }
+export const SongMetadataUpdateSchema = VibesSongMetaSchema.omit({ id: true }).partial().strict()
+export type SongMetadataUpdate = z.infer<typeof SongMetadataUpdateSchema>
 
-export type CaptionTrack = {
-  id: string
-  language: string
-  name: string
-  automatic: boolean
-  isDefault?: boolean
-}
-
-export type ImportCandidate =
-  | {
-      source: 'usdb'
-      id: string
-      title: string
-      artist: string
-      song: UsdbSong
+export const SongManifestSchema = z
+  .object({
+    version: z.literal(1),
+    source: SongSourceSchema,
+    title: z.string().trim().min(1),
+    artist: z.string().trim().min(1),
+    language: z.array(z.string().trim().min(1)).default([]),
+    media: z
+      .object({
+        video: z.string().min(1).optional(),
+        audio: z.string().min(1).optional(),
+        cover: z.string().min(1).optional()
+      })
+      .refine((media) => Boolean(media.video || media.audio), 'Song has no media'),
+    lyrics: z.object({
+      timing: z.enum(['syllable', 'phrase', 'video']),
+      lines: z.array(LineSchema),
+      originalFile: z.string().optional(),
+      language: z.string().optional(),
+      automatic: z.boolean().optional()
+    })
+  })
+  .superRefine((manifest, context) => {
+    if (manifest.lyrics.timing === 'video') {
+      if (manifest.lyrics.lines.length)
+        context.addIssue({
+          code: 'custom',
+          message: 'Video-embedded lyrics must not contain timed cues'
+        })
+      if (!manifest.media.video)
+        context.addIssue({ code: 'custom', message: 'Video-embedded lyrics require video media' })
+    } else if (!manifest.lyrics.lines.length) {
+      context.addIssue({ code: 'custom', message: 'Song has no timed lyrics' })
     }
-  | {
-      source: 'youtube'
-      id: string
-      title: string
-      artist: string
-      url: string
-      tracks: CaptionTrack[]
-      lyricsInVideo?: boolean
-      thumbnail?: string
-    }
+  })
+export type SongManifest = z.infer<typeof SongManifestSchema>
 
-export type SongImportRequest =
-  | { candidate: Extract<ImportCandidate, { source: 'usdb' }> }
-  | ({
-      candidate: Extract<ImportCandidate, { source: 'youtube' }>
-      title: string
-      artist: string
-    } & (
-      | { captionTrackId: string; lyricsInVideo?: false }
-      | { lyricsInVideo: true; captionTrackId?: never }
-    ))
+export const CaptionTrackSchema = z.object({
+  id: z.string().min(1),
+  language: z.string().min(1),
+  name: z.string(),
+  automatic: z.boolean(),
+  isDefault: z.boolean().optional()
+})
+export type CaptionTrack = z.infer<typeof CaptionTrackSchema>
+
+export const UsdbImportCandidateSchema = z.object({
+  source: z.literal('usdb'),
+  id: z.string().regex(/^[a-zA-Z0-9_-]+$/),
+  title: z.string().min(1),
+  artist: z.string().min(1),
+  song: UsdbSongSchema
+})
+export type UsdbImportCandidate = z.infer<typeof UsdbImportCandidateSchema>
+
+export const YoutubeImportCandidateSchema = z.object({
+  source: z.literal('youtube'),
+  id: z.string().regex(/^[a-zA-Z0-9_-]+$/),
+  title: z.string().min(1),
+  artist: z.string().min(1),
+  url: z.url(),
+  tracks: z.array(CaptionTrackSchema),
+  lyricsInVideo: z.boolean().optional(),
+  thumbnail: z.string().optional()
+})
+export type YoutubeImportCandidate = z.infer<typeof YoutubeImportCandidateSchema>
+
+export const ImportCandidateSchema = z.discriminatedUnion('source', [
+  UsdbImportCandidateSchema,
+  YoutubeImportCandidateSchema
+])
+export type ImportCandidate = z.infer<typeof ImportCandidateSchema>
+
+export const SongImportRequestSchema = z.union([
+  z.object({ candidate: UsdbImportCandidateSchema }).strict(),
+  z
+    .object({
+      candidate: YoutubeImportCandidateSchema,
+      title: z.string().trim().min(1),
+      artist: z.string().trim().min(1),
+      captionTrackId: z.string().min(1),
+      lyricsInVideo: z.literal(false).optional()
+    })
+    .strict(),
+  z
+    .object({
+      candidate: YoutubeImportCandidateSchema,
+      title: z.string().trim().min(1),
+      artist: z.string().trim().min(1),
+      lyricsInVideo: z.literal(true),
+      captionTrackId: z.never().optional()
+    })
+    .strict()
+])
+export type SongImportRequest = z.infer<typeof SongImportRequestSchema>

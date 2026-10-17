@@ -1,33 +1,38 @@
 <script setup lang="ts">
-import { accessSongs } from '@renderer/composables/useSongs'
+import { accessSongManagement } from '@renderer/composables/useSongManagement'
 import { computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { useDialog } from '@renderer/composables/useDialog'
 
 const model = defineModel<string[]>({
-  default: () => []
+  default: (): string[] => []
 })
-const songs = accessSongs()
+const songs = accessSongManagement()
+const dialog = useDialog()
 
 const route = useRoute()
 const inPlayer = computed(() => route.name === 'Song Player')
 
 function selectFolder(index?: number) {
-  window.api.dialog.openFolder().then((folderPath) => {
-    if (folderPath) {
-      if (index !== undefined) {
-        model.value[index] = folderPath
-      } else {
-        model.value.push(folderPath)
+  dialog
+    .openFolder()
+    .then((folderPath) => {
+      if (folderPath) {
+        if (index !== undefined) {
+          model.value[index] = folderPath
+        } else {
+          model.value.push(folderPath)
+        }
       }
-    }
-  })
+    })
+    .catch((error) => console.error('Could not select a folder:', error))
 }
 
 watch(
   model,
   (newFolders) => {
     console.log('Folders updated:', newFolders)
-    songs.refresh()
+    void songs.getSongs().catch((error) => console.error('Could not refresh songs:', error))
   },
   { deep: true }
 )

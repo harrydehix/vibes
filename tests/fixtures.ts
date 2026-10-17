@@ -9,21 +9,26 @@ import { loadTestModule } from './helpers.ts'
 import { Effect } from 'effect'
 import * as youtubeUrl from '../src/shared/youtubeUrl.ts'
 import { normalizeYoutubeUrl } from '../src/shared/youtubeUrl.ts'
-import { parseYoutubeCaptions } from '../src/main/song-import/captions.ts'
+import { parseYoutubeCaptions } from '../src/main/song-management/lyrics/captions.ts'
+import { parseSongFile } from '../src/main/song-management/formats/ultrastar.ts'
 import {
   parseSongManifest,
   parseSongSource,
   songManifestFile
-} from '../src/main/song-import/manifest.ts'
-import type { Song, SongDeleteResponse, SongManifest } from '../src/shared/types.ts'
+} from '../src/main/song-management/formats/manifest.ts'
+import type { Song, SongManifest } from '../src/shared/types.ts'
 import type { ImportCandidate } from '../src/shared/types.ts'
-import { discoverCaptionedMusic, isMusicVideo } from '../src/main/song-import/discovery.ts'
+import {
+  discoverCaptionedMusic,
+  isMusicVideo
+} from '../src/main/song-management/providers/youtube/discovery.ts'
 import {
   parseYoutubeCookies,
   requiresYoutubeAuthentication
-} from '../src/main/song-import/youtubeCookies.ts'
+} from '../src/main/youtube-auth/cookies.ts'
 import { IPC_CHANNELS } from '../src/shared/ipc.ts'
 import * as downloadErrors from '../src/shared/errors.ts'
+import * as songTypes from '../src/shared/types.ts'
 import * as captionTracks from '../src/shared/captionTracks.ts'
 import type { YoutubeAuthStatus } from '../src/shared/types.ts'
 import type { SongImportRequest } from '../src/shared/types.ts'
@@ -36,21 +41,15 @@ export async function createSongDeletionFixture(context: TestContext) {
   const root = path.join(base, 'library')
   await mkdir(root)
   const roots = [root]
-  const handlers = new Map<string, (event: object, ...args: unknown[]) => Promise<unknown>>()
   const errors: unknown[] = []
   let failure: Error | null = null
-  const source = await readFile(new URL('../src/main/ipc/songs.ts', import.meta.url), 'utf8')
+  const source = await readFile(
+    new URL('../src/main/song-management/library.ts', import.meta.url),
+    'utf8'
+  )
   const manager = loadTestModule(
     source,
     {
-      electron: {
-        ipcMain: {
-          handle: (
-            name: string,
-            handler: typeof handlers extends Map<string, infer Handler> ? Handler : never
-          ) => handlers.set(name, handler)
-        }
-      },
       'fs/promises': {
         ...require('node:fs/promises'),
         writeFile: async (filename: string, content: string, encoding: 'utf-8') => {
@@ -63,30 +62,43 @@ export async function createSongDeletionFixture(context: TestContext) {
         }
       },
       path: { default: path },
-      './settings': { settingsManager: { settings: { songFolders: roots } } },
-      '../../shared/ipc': { IPC_CHANNELS },
-      '../song-import/manifest': { parseSongManifest, parseSongSource, songManifestFile }
+      '../settings/index': { settingsManager: { settings: { songFolders: roots } } },
+      '../../shared/types': songTypes,
+      '../../shared/errors': downloadErrors,
+      './formats/ultrastar': { parseSongFile },
+      './formats/manifest': { parseSongManifest, parseSongSource, songManifestFile }
     },
     { console: { log: () => {}, warn: () => {}, error: (...args: unknown[]) => errors.push(args) } }
   ).songManager as {
     _songs: Song[]
     songs: Song[]
-    defineIpcHandles: () => Promise<void>
+    getSongs: () => Promise<Song[]>
+    deleteSong: (id: unknown) => Promise<Song[]>
+    updateSong: (id: string, patch: unknown) => Promise<songTypes.VibesSongMeta>
+    loadSong: (folder: string, index: number) => Promise<Song>
+    addSong: (folder: string) => Promise<Song>
   }
-  await manager.defineIpcHandles()
   return {
     base,
     root,
     roots,
     manager,
     errors,
-    deleteSong: (id: unknown) =>
-      handlers.get(IPC_CHANNELS.SONGS.DELETE)!({}, id) as Promise<SongDeleteResponse>,
+    deleteSong: async (id: unknown): Promise<downloadErrors.ApiResult<Song[]>> => {
+      try {
+        return { ok: true, value: await manager.deleteSong(id) }
+      } catch (error) {
+        errors.push(['Song deletion failed', error])
+        return { ok: false, error: { code: downloadErrors.getApiErrorCode(error) } }
+      }
+    },
     fixOffset: (song: Song, offsetMs: unknown) =>
-      handlers.get(IPC_CHANNELS.SONGS.FIX_OFFSET)!({}, song.meta.id, offsetMs) as Promise<void>,
+      manager.updateSong(song.meta.id, { fixOffsetMs: offsetMs }),
     songPlayed: (id: string) =>
-      handlers.get(IPC_CHANNELS.SONGS.SONG_PLAYED)!({}, id) as Promise<void>,
-    refreshSongs: () => handlers.get(IPC_CHANNELS.SONGS.REFRESH)!({}) as Promise<Song[]>,
+      manager.updateSong(id, {
+        playCount: manager.songs.find((song) => song.meta.id === id)!.meta.playCount + 1
+      }),
+    refreshSongs: () => manager.getSongs(),
     addSong: async (folder: string, id: string) => {
       await mkdir(folder, { recursive: true })
       await writeFile(path.join(folder, 'video.mp4'), 'temporary test media')
@@ -117,7 +129,10 @@ export async function createFfmpegFixture(context: TestContext) {
     await writeFile(filename, `${name} version fixture`)
   }
   const checks: string[] = []
-  const source = await readFile(new URL('../src/main/ipc/ffmpeg.ts', import.meta.url), 'utf8')
+  const source = await readFile(
+    new URL('../src/main/dependencies/ffmpeg.ts', import.meta.url),
+    'utf8'
+  )
   const manager = loadTestModule(
     source,
     {
@@ -170,7 +185,10 @@ export async function createYoutubeAuthFixture(context: TestContext) {
   const events: YoutubeAuthStatus[] = []
   const temporaryFiles: string[] = []
   let canceled = false
-  const source = await readFile(new URL('../src/main/ipc/youtubeAuth.ts', import.meta.url), 'utf8')
+  const source = await readFile(
+    new URL('../src/main/youtube-auth/index.ts', import.meta.url),
+    'utf8'
+  )
   const modules = {
     electron: {
       app: { getPath: () => folder },
@@ -211,27 +229,35 @@ export async function createYoutubeAuthFixture(context: TestContext) {
         queueMicrotask(() => callback(null))
       }
     },
-    '../../shared/ipc': { IPC_CHANNELS },
-    '../song-import/youtubeCookies': { parseYoutubeCookies, requiresYoutubeAuthentication },
+    '../../../../shared/ipc': { IPC_CHANNELS },
+    './cookies': { parseYoutubeCookies, requiresYoutubeAuthentication },
     '../../shared/errors': downloadErrors,
-    './ytdlp': { ytDlpManager: { binPath: 'fixture-yt-dlp' } }
+    '../dependencies/ytdlp': { ytDlpManager: { binPath: 'fixture-yt-dlp' } }
   }
   type Manager = {
     getStatus: () => Promise<YoutubeAuthStatus>
     withCookies: <Result>(operation: (args: string[]) => Promise<Result>) => Promise<Result>
-    defineIpcHandles: () => void
+    importCookies: () => Promise<YoutubeAuthStatus>
+    signOut: () => Promise<YoutubeAuthStatus>
   }
-  const restart = () => loadTestModule(source, modules).youtubeAuthManager as Manager
+  const restart = () => {
+    const loaded = loadTestModule(source, modules)
+    ;(
+      loaded.youtubeAuthEvents as {
+        on: (event: string, callback: (status: YoutubeAuthStatus) => void) => void
+      }
+    ).on('changed', (status) => events.push(status))
+    return loaded.youtubeAuthManager as Manager
+  }
   const manager = restart()
-  manager.defineIpcHandles()
   return {
     manager,
     restart,
     events,
     temporaryFiles,
     sessionPath: path.join(folder, 'youtube-session.enc'),
-    importCookies: () => handlers.get(IPC_CHANNELS.YOUTUBE_AUTH.IMPORT_COOKIES)!(),
-    signOut: () => handlers.get(IPC_CHANNELS.YOUTUBE_AUTH.SIGN_OUT)!(),
+    importCookies: () => manager.importCookies(),
+    signOut: () => manager.signOut(),
     cancelPicker: () => {
       canceled = true
     }
@@ -291,7 +317,7 @@ export async function createYoutubeImportFixture(context: TestContext) {
   const folder = await mkdtemp(path.join(tmpdir(), 'vibes-youtube-import-'))
   context.after(() => rm(folder, { recursive: true, force: true }))
   const source = await readFile(
-    new URL('../src/main/song-import/youtube.ts', import.meta.url),
+    new URL('../src/main/song-management/providers/youtube/index.ts', import.meta.url),
     'utf8'
   )
   const metadata = {
@@ -351,11 +377,11 @@ export async function createYoutubeImportFixture(context: TestContext) {
           throw new Error('Unexpected yt-dlp command')
         }
       },
-      '../ipc/ytdlp': { ytDlpManager: { binPath: 'yt-dlp-fixture' } },
-      '../ipc/youtubeAuth': {
+      '../../../dependencies/ytdlp': { ytDlpManager: { binPath: 'yt-dlp-fixture' } },
+      '../../../youtube-auth/index': {
         youtubeAuthManager: { withCookies: (run: (args: string[]) => Promise<string>) => run([]) }
       },
-      '../ultrastar-download/youtube/download': {
+      './media/download': {
         downloadYoutubeVideoWithProgress: (
           _url: string,
           output: string,
@@ -367,13 +393,13 @@ export async function createYoutubeImportFixture(context: TestContext) {
             progress({ percent: 1 })
           })
       },
-      './captions': { normalizeYoutubeUrl, parseYoutubeCaptions },
-      '../../shared/youtubeUrl': youtubeUrl,
-      './manifest': { songManifestFile: 'song.vibes.json' },
+      '../../lyrics/captions': { normalizeYoutubeUrl, parseYoutubeCaptions },
+      '../../../../shared/youtubeUrl': youtubeUrl,
+      '../../formats/manifest': { songManifestFile: 'song.vibes.json' },
       './discovery': { isMusicVideo },
-      '../../shared/errors': downloadErrors,
-      '../../shared/captionTracks': captionTracks,
-      './youtubeSearch': { searchYoutube: () => {}, inspectYoutubeVideo: () => inspectVideo() }
+      '../../../../shared/errors': downloadErrors,
+      '../../../../shared/captionTracks': captionTracks,
+      './search': { searchYoutube: () => {}, inspectYoutubeVideo: () => inspectVideo() }
     },
     { URL, Buffer, AbortSignal, fetch: async () => ({ ok: false }), console }
   ) as {
@@ -427,7 +453,7 @@ export async function createYoutubeImportFixture(context: TestContext) {
 
 export async function createYoutubeSearchFixture() {
   const source = await readFile(
-    new URL('../src/main/song-import/youtubeSearch.ts', import.meta.url),
+    new URL('../src/main/song-management/providers/youtube/search.ts', import.meta.url),
     'utf8'
   )
   const allIds = Array.from({ length: 24 }, (_, index) => `video${String(index).padStart(6, '0')}`)
@@ -506,7 +532,7 @@ export async function createYoutubeSearchFixture() {
           }
         }
       },
-      '../../shared/youtubeUrl': youtubeUrl,
+      '../../../../shared/youtubeUrl': youtubeUrl,
       './discovery': { discoverCaptionedMusic, isMusicVideo }
     },
     {

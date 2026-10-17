@@ -12,7 +12,7 @@ import { computed, effectScope, nextTick, reactive, ref, watch } from 'vue'
 import {
   parseYoutubeCookies,
   requiresYoutubeAuthentication
-} from '../src/main/song-import/youtubeCookies.ts'
+} from '../src/main/youtube-auth/cookies.ts'
 import * as downloadErrors from '../src/shared/errors.ts'
 import type { YoutubeAuthStatus } from '../src/shared/types.ts'
 import { createFfmpegFixture, createYoutubeAuthFixture } from './fixtures.ts'
@@ -64,7 +64,7 @@ test('failed FFmpeg installation is not marked verified and cleans up its stagin
 
 test('both YouTube download paths accept separate streams and produce an MP4 via the yt-dlp preset', async () => {
   const source = await readFile(
-    new URL('../src/main/ultrastar-download/youtube/download.ts', import.meta.url),
+    new URL('../src/main/song-management/providers/youtube/media/download.ts', import.meta.url),
     'utf8'
   )
   const calls: string[][] = []
@@ -80,11 +80,11 @@ test('both YouTube download paths accept separate streams and produce an MP4 via
         return child
       }
     },
-    '../../ipc/ytdlp': { ytDlpManager: { binPath: 'fixture-yt-dlp' } },
-    '../../ipc/ffmpeg': {
+    '../../../../dependencies/ytdlp': { ytDlpManager: { binPath: 'fixture-yt-dlp' } },
+    '../../../../dependencies/ffmpeg': {
       ffmpegManager: { verified: true, binDir: path.resolve('managed-ffmpeg') }
     },
-    '../../ipc/youtubeAuth': {
+    '../../../../youtube-auth/index': {
       youtubeAuthManager: {
         withCookies: (operation: (args: string[]) => Promise<void>) => operation([])
       }
@@ -227,7 +227,23 @@ test('dismissing the automatic popup survives later errors and remounts; Setting
           },
           onUnmounted: () => {}
         },
-        '@renderer/composables/useSettings': { accessSettings: () => ({ settings }) },
+        '@renderer/composables/useSettings': {
+          accessSettings: () => ({
+            settings,
+            get: async () => ({ ...saved }),
+            update: async (value: typeof saved) => Object.assign(saved, value)
+          })
+        },
+        '@renderer/composables/useYoutubeAuth': {
+          useYoutubeAuth: () => ({
+            status: async () => ({ authenticated: false, message: null }),
+            onChanged: (callback: typeof notify) => {
+              notify = callback
+              return () => {}
+            }
+          })
+        },
+        '@shared/errors': downloadErrors,
         './Popup.vue': {},
         './LoadingSpinner.vue': {}
       },
@@ -290,7 +306,8 @@ test('the YouTube popup is enabled only after the first SongList visit', async (
     './composables/useBackgroundMusic': { useBackgroundMusic: () => {} },
     './composables/useController': { useController: () => {} },
     './composables/useSettings': { useSettings: () => ({}) },
-    './composables/useSongs': { useSongs: () => {} },
+    './composables/useSongManagement': { useSongManagement: () => {} },
+    './composables/useUpdater': { useUpdater: () => {} },
     './components/PlayerSettings.vue': {},
     './components/UpdatePopup.vue': {},
     './components/YoutubeAuthPopup.vue': {}

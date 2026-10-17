@@ -1,17 +1,15 @@
-import { app, shell, BrowserWindow, protocol, screen, ipcMain, dialog } from 'electron'
+import { app, shell, BrowserWindow, screen, dialog } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import { autoUpdater } from 'electron-updater'
 import icon from '../../resources/icon.png?asset'
-import { settingsManager } from './ipc/settings'
-import { songManager } from './ipc/songs'
-import { dialogManager } from './ipc/dialogs'
-import { downloaderManager } from './ipc/downloaderManager'
-import { existsSync } from 'fs'
-import { ytDlpManager } from './ipc/ytdlp'
-import { IPC_CHANNELS } from '../shared/ipc'
-import { youtubeAuthManager } from './ipc/youtubeAuth'
-import { ffmpegManager } from './ipc/ffmpeg'
+import { defineSettingsIpc } from './settings/ipc'
+import { defineSongIpc } from './song-management/ipc'
+import { defineDialogIpc } from './dialog/ipc'
+import { ytDlpManager } from './dependencies/ytdlp'
+import { defineYoutubeAuthIpc } from './youtube-auth/ipc'
+import { ffmpegManager } from './dependencies/ffmpeg'
+import { defineUpdaterIpc } from './updater/ipc'
+import { defineLocalProtocol, registerLocalScheme } from './dependencies/local-files'
 
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 app.commandLine.appendSwitch('disable-features', 'AudioServiceOutOfProcess')
@@ -64,58 +62,18 @@ function createWindow(): void {
   }
 }
 
-function definesUpdateIpcHandles() {
-  if (is.dev) {
-    autoUpdater.forceDevUpdateConfig = true
-  }
-
-  autoUpdater.disableWebInstaller = true
-
-  ipcMain.handle(IPC_CHANNELS.APP_UPDATE.INSTALL, () => {
-    console.log('Installing update and restarting app...')
-    autoUpdater.quitAndInstall(false, true)
-  })
-
-  autoUpdater.on('download-progress', (progress) => {
-    const mainWindow = BrowserWindow.getAllWindows()[0]
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send(IPC_CHANNELS.APP_UPDATE.PROGRESS, progress)
-    }
-  })
-
-  autoUpdater.on('update-downloaded', (update) => {
-    const mainWindow = BrowserWindow.getAllWindows()[0]
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send(IPC_CHANNELS.APP_UPDATE.DOWNLOADED, update)
-    }
-  })
-}
-
 async function init() {
   await ytDlpManager.init()
   await ffmpegManager.init()
-  await settingsManager.defineIpcHandles()
-  await songManager.defineIpcHandles()
-  dialogManager.defineIpcHandles()
-  youtubeAuthManager.defineIpcHandles()
-  await downloaderManager.defineIpcHandles()
-  definesUpdateIpcHandles()
+  await defineSettingsIpc()
+  await defineSongIpc()
+  defineDialogIpc()
+  defineYoutubeAuthIpc()
+  defineUpdaterIpc()
   createWindow()
-  autoUpdater.checkForUpdatesAndNotify()
 }
 
-protocol.registerSchemesAsPrivileged([
-  {
-    scheme: 'local',
-    privileges: {
-      standard: true,
-      secure: true,
-      supportFetchAPI: true,
-      stream: true,
-      bypassCSP: true
-    }
-  }
-])
+registerLocalScheme()
 
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
@@ -131,58 +89,7 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  // Streams local files to renderer
-  protocol.handle('local', (request) => {
-    const actualPath = new URL(request.url).searchParams.get('path')
-
-    if (!actualPath || !existsSync(actualPath)) {
-      return new Response('File not found', { status: 404 })
-    }
-
-    const { statSync, createReadStream } = require('fs')
-    const { Readable } = require('stream')
-
-    const stat = statSync(actualPath)
-    const total = stat.size
-    const rangeHeader = request.headers.get('Range') || request.headers.get('range')
-
-    let contentType = 'video/mp4' // default
-    if (actualPath.endsWith('.webm')) contentType = 'video/webm'
-    else if (actualPath.endsWith('.mkv')) contentType = 'video/x-matroska'
-    else if (actualPath.endsWith('.mp3')) contentType = 'audio/mpeg'
-
-    if (rangeHeader) {
-      const parts = rangeHeader.replace(/bytes=/, '').split('-')
-      const partialstart = parts[0]
-      const partialend = parts[1]
-
-      const start = parseInt(partialstart, 10)
-      const end = partialend ? parseInt(partialend, 10) : total - 1
-      const chunksize = end - start + 1
-
-      const stream = createReadStream(actualPath, { start, end })
-
-      return new Response(Readable.toWeb(stream) as any, {
-        status: 206,
-        headers: {
-          'Content-Range': `bytes ${start}-${end}/${total}`,
-          'Accept-Ranges': 'bytes',
-          'Content-Length': chunksize.toString(),
-          'Content-Type': contentType
-        }
-      })
-    } else {
-      const stream = createReadStream(actualPath)
-      return new Response(Readable.toWeb(stream) as any, {
-        status: 200,
-        headers: {
-          'Accept-Ranges': 'bytes',
-          'Content-Length': total.toString(),
-          'Content-Type': contentType
-        }
-      })
-    }
-  })
+  defineLocalProtocol()
 
   void init().catch((error) => {
     console.error('Application startup failed:', error)
@@ -208,6 +115,3 @@ app.on('window-all-closed', () => {
     app.quit()
   }
 })
-
-// In this file you can include the rest of your app's specific main process
-// code. You can also put them in separate files and require them here.

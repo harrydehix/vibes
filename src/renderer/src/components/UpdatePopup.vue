@@ -1,16 +1,17 @@
 <script setup lang="ts">
-import { useAutoUpdater } from '@renderer/composables/useAutoUpdater'
+import { accessUpdater } from '@renderer/composables/useUpdater'
+import { getApiErrorMessage } from '@shared/errors'
 import { ref, useCssModule, watch } from 'vue'
 import Popup from './Popup.vue'
 
 const $style = useCssModule()
-const autoUpdater = useAutoUpdater()
+const autoUpdater = accessUpdater()
 const isVisible = ref(false)
 
 watch(
-  () => autoUpdater.updateInfo.value,
-  (newInfo) => {
-    if (newInfo) {
+  () => autoUpdater.isDownloaded.value,
+  (downloaded) => {
+    if (downloaded) {
       isVisible.value = true
     }
   },
@@ -22,7 +23,7 @@ function closePopup() {
 }
 
 function installNow() {
-  autoUpdater.installUpdate()
+  void autoUpdater.install().catch((error) => console.error('Could not install app update:', error))
 }
 </script>
 <template>
@@ -31,10 +32,14 @@ function installNow() {
     icon="md-keyboarddoublearrowup-round"
     :visible="isVisible"
     okText="Install now"
+    :okDisabled="!autoUpdater.isDownloaded.value"
     cancelText="Later"
     @ok="installNow"
     @cancel="closePopup"
   >
+    <p v-if="autoUpdater.error.value" role="alert">
+      {{ getApiErrorMessage(autoUpdater.error.value.code) }}
+    </p>
     <p :class="$style.text">
       There is a new version of vibes (<span :class="$style.version"
         >v{{ autoUpdater.updateInfo.value?.version }}</span

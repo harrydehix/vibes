@@ -1,10 +1,10 @@
 import { ref, computed, watch, onUnmounted, provide, inject } from 'vue'
-import { accessSongs } from './useSongs'
+import { accessSongManagement } from './useSongManagement'
 import { accessLocalFile } from '@renderer/utils/accessLocalFile'
 import { accessSettings } from './useSettings'
 
 export function useSongPlayer() {
-  const songsApi = accessSongs()
+  const songsApi = accessSongManagement()
   const { settings } = accessSettings()
   const video = ref<HTMLVideoElement | null>(null)
   const audio = ref<HTMLAudioElement>(new Audio()) // Fallback für reine Audio-Songs
@@ -27,8 +27,14 @@ export function useSongPlayer() {
   const currentSong = computed(() => songsApi.songs.value[currentIndex.value])
   const currentTime = ref(0)
   const songOffsetPreviewMs = ref<number | null>(null)
+  const playbackEndSeconds = computed(() => {
+    const end = isUsingAudio.value
+      ? currentSong.value?.audioEndSeconds
+      : currentSong.value?.videoEndSeconds
+    return typeof end === 'number' && Number.isFinite(end) && end > 0 ? end : undefined
+  })
   const pausedByUser = computed(() => {
-    return !isPlaying.value && isLoaded.value === true
+    return !isPlaying.value && isLoaded.value === true && !ended.value
   })
 
   // Event Listeners aufbauen, wenn das Video-Element verfügbar wird
@@ -178,11 +184,13 @@ export function useSongPlayer() {
       isLoaded.value = true
     })
 
-    duration.value = song.usesVideo
-      ? (video.value?.duration ?? 0)
-      : song.usesAudio
-        ? audio.value.duration
+    const mediaDuration = song.usesAudio
+      ? audio.value.duration
+      : song.usesVideo
+        ? (video.value?.duration ?? 0)
         : 0
+    const end = playbackEndSeconds.value
+    duration.value = end === undefined ? mediaDuration : Math.min(mediaDuration, end)
   }
 
   const play = async () => {
@@ -223,6 +231,13 @@ export function useSongPlayer() {
         currentTime.value = audio.value.currentTime
       } else if (isUsingVideo.value) {
         currentTime.value = video.value?.currentTime ?? 0
+      }
+
+      const end = playbackEndSeconds.value
+      if (end !== undefined && currentTime.value >= end) {
+        pause()
+        ended.value = true
+        return
       }
 
       if (isPlaying.value) {

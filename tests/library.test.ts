@@ -7,9 +7,84 @@ import { Script } from 'node:vm'
 import { loadTestModule } from './helpers.ts'
 import ts from 'typescript'
 import { computed, effectScope, markRaw, nextTick, ref, watch } from 'vue'
-import { parseSongManifest } from '../src/main/song-import/manifest.ts'
-import type { Song, SongDeleteResponse } from '../src/shared/types.ts'
-import { createSongDeletionFixture, folder, meta, manifest } from './fixtures.ts'
+import { parseSongManifest } from '../src/main/song-management/formats/manifest.ts'
+import { parseSongFile } from '../src/main/song-management/formats/ultrastar.ts'
+import type { Song } from '../src/shared/types.ts'
+import { createSongDeletionFixture, folder, meta, manifest, videoId } from './fixtures.ts'
+import * as apiErrors from '../src/shared/errors.ts'
+import * as youtubeUrl from '../src/shared/youtubeUrl.ts'
+
+test('UltraStar END uses milliseconds, preserves START seconds and applies only the video gap', () => {
+  const parse = (end?: string): Song =>
+    parseSongFile(
+      [
+        '#TITLE:End boundary',
+        '#ARTIST:Artist',
+        '#BPM:120',
+        '#MP3:audio.mp3',
+        '#VIDEO:video.mp4',
+        '#VIDEOGAP:1.75',
+        '#START:12',
+        ...(end === undefined ? [] : [`#END:${end}`]),
+        ': 0 4 60 Lyrics',
+        'E'
+      ].join('\n'),
+      folder,
+      0,
+      250,
+      { ...meta }
+    )
+  const song = parse('123456')
+  assert.equal(song.audioStartSeconds, 12)
+  assert.equal(song.audioEndSeconds, 123.456)
+  assert.equal(song.videoEndSeconds, 125.206)
+  for (const value of [undefined, '', 'invalid', '123456oops', 'NaN', 'Infinity', '-1', '0']) {
+    const untrimmed = parse(value)
+    assert.equal(untrimmed.audioEndSeconds, undefined)
+    assert.equal(untrimmed.videoEndSeconds, undefined)
+  }
+})
+
+test('UltraStar lyrics retain golden and golden rap notes for both singers with unchanged timing', async (context) => {
+  const fixture = await createSongDeletionFixture(context)
+  const song = await fixture.addSong(path.join(fixture.root, 'golden-song'), 'golden-song')
+  await writeFile(path.join(song.folder, 'meta.vibes'), JSON.stringify(song.meta))
+  await writeFile(path.join(song.folder, 'offset.fix'), '25')
+  await writeFile(
+    path.join(song.folder, 'lyrics.txt'),
+    [
+      '#TITLE:Golden song',
+      '#ARTIST:Test artist',
+      '#BPM:120',
+      '#GAP:200',
+      '#VIDEO:video.mp4',
+      ': 0 4 60 Normal',
+      '* 4 4 60 Golden',
+      'G 8 4 60 Golden rap',
+      'R 12 4 60 Rap',
+      '- 16',
+      'P2',
+      '* 16 4 60 Second singer',
+      'E'
+    ].join('\n')
+  )
+  const [loaded] = await fixture.refreshSongs()
+  assert.deepEqual(
+    Array.from(loaded.lines.P1[0].syllables, (syllable) => [
+      syllable.text,
+      syllable.isGolden === true,
+      syllable.startTimeMs,
+      syllable.endTimeMs
+    ]),
+    [
+      ['Normal', false, 225, 725],
+      ['Golden', true, 725, 1225],
+      ['Golden rap', true, 1225, 1725],
+      ['Rap', false, 1725, 2225]
+    ]
+  )
+  assert.equal(loaded.lines.P2![0].syllables[0].isGolden, true)
+})
 
 test('song offsets persist in metadata, replace old corrections and survive reloading without doubling', async (context) => {
   const fixture = await createSongDeletionFixture(context)
@@ -54,12 +129,11 @@ test('song offsets reject invalid numbers and identities and preserve cached lyr
   const fixture = await createSongDeletionFixture(context)
   const song = await fixture.addSong(path.join(fixture.root, 'song'), 'song')
   for (const offset of [NaN, Infinity, -Infinity, '100', null]) {
-    await assert.rejects(fixture.fixOffset(song, offset), /finite number/)
+    await assert.rejects(fixture.fixOffset(song, offset), { code: 'invalid_request' })
   }
-  await assert.rejects(
-    fixture.fixOffset({ ...song, meta: { ...song.meta, id: 'unknown' } }, 100),
-    /uniquely identified/
-  )
+  await assert.rejects(fixture.fixOffset({ ...song, meta: { ...song.meta, id: 'unknown' } }, 100), {
+    code: 'song_not_found'
+  })
   fixture.failWith(new Error('Disk write failed'))
   await assert.rejects(fixture.fixOffset(song, 100), /Disk write failed/)
   assert.equal(fixture.manager.songs[0], song)
@@ -81,11 +155,107 @@ test('song deletion removes the complete song folder and reindexes the remaining
     Array.from(fixture.manager.songs, (song) => [song.meta.id, song.index]),
     [['second', 0]]
   )
-  assert.equal(result.ok && result.songs[0].meta.id, 'second')
+  assert.equal(result.ok && result.value[0].meta.id, 'second')
   assert.equal(fixture.errors.length, 0)
   assert.equal((await fixture.deleteSong(second.meta.id)).ok, true)
   assert.equal(fixture.manager.songs.length, 0)
   assert.equal(existsSync(fixture.root), true)
+})
+
+test('partial song metadata updates are validated, serialized and preserve immutable identity', async (context) => {
+  const fixture = await createSongDeletionFixture(context)
+  const song = await fixture.addSong(path.join(fixture.root, 'metadata'), 'metadata')
+  await Promise.all([
+    fixture.manager.updateSong(song.meta.id, { favorite: true }),
+    fixture.manager.updateSong(song.meta.id, { playCount: 12, fixOffsetMs: -100 })
+  ])
+  const saved = JSON.parse(await readFile(path.join(song.folder, 'meta.vibes'), 'utf8'))
+  assert.deepEqual(saved, {
+    ...meta,
+    id: song.meta.id,
+    favorite: true,
+    playCount: 12,
+    fixOffsetMs: -100
+  })
+  for (const patch of [
+    { id: 'replacement' },
+    { folder: fixture.base },
+    { favorite: 'yes' },
+    { playCount: -1 },
+    { playCount: 1.5 }
+  ]) {
+    await assert.rejects(fixture.manager.updateSong(song.meta.id, patch), {
+      code: 'invalid_request'
+    })
+  }
+  assert.equal(song.meta.id, 'metadata')
+})
+
+test('unified renderer song management owns library, metadata, downloads and listener disposal', async () => {
+  const source = await readFile(
+    new URL('../src/renderer/src/composables/useSongManagement.ts', import.meta.url),
+    'utf8'
+  )
+  const cleanup: Array<() => void> = []
+  const song = parseSongManifest(JSON.stringify(manifest()), folder, 0, 0, { ...meta })
+  let releases = 0
+  const module = loadTestModule(
+    source,
+    {
+      vue: {
+        ref,
+        computed,
+        watch: () => {},
+        onMounted: () => {},
+        onScopeDispose: (callback: () => void) => cleanup.push(callback),
+        provide: () => {}
+      },
+      '@shared/errors': apiErrors,
+      '@shared/youtubeUrl': youtubeUrl
+    },
+    {
+      window: {
+        api: {
+          songs: {
+            getSongs: async () => ({ ok: true, value: [song] }),
+            searchSongs: async () => ({ ok: true, value: { songs: [], errors: [] } }),
+            updateSong: async (id: string, patch: object) => ({
+              ok: true,
+              value: { ...song.meta, ...patch, id }
+            }),
+            downloadSong: async () => ({ ok: true, value: song }),
+            deleteSong: async () => ({ ok: true, value: [] }),
+            onDownloadProgress: () => () => {
+              releases++
+            }
+          }
+        }
+      }
+    }
+  ) as {
+    useSongManagement(): {
+      songs: { value: Song[] }
+      downloads: { value: { status: string }[] }
+      getSongs(): Promise<Song[]>
+      updateSong(id: string, patch: object): Promise<unknown>
+      downloadSong(request: object): Promise<Song>
+      deleteSong(id: string): Promise<Song[]>
+    }
+  }
+  const management = module.useSongManagement()
+  await management.getSongs()
+  const lines = management.songs.value[0].lines
+  await management.updateSong(song.meta.id, { favorite: true, fixOffsetMs: 100 })
+  assert.equal(management.songs.value[0].meta.favorite, true)
+  assert.equal(management.songs.value[0].lines, lines)
+  assert.equal(management.songs.value[0].fixOffsetMs, 0)
+  await management.downloadSong({ candidate: { source: 'youtube', id: videoId } })
+  assert.equal(management.downloads.value[0].status, 'completed')
+  assert.equal(management.songs.value.length, 1)
+  await management.deleteSong(song.meta.id)
+  assert.equal(management.songs.value.length, 0)
+  cleanup.forEach((callback) => callback())
+  assert.equal(releases, 1)
 })
 
 test('song deletion rejects unknown IDs, library roots, outside folders and directory links', async (context) => {
@@ -118,7 +288,7 @@ test('song deletion rejects unknown IDs, library roots, outside folders and dire
   ]) {
     const result = await fixture.deleteSong(id)
     assert.equal(result.ok, false)
-    assert.equal(!result.ok && result.error.includes(fixture.base), false)
+    assert.deepEqual(!result.ok && Object.keys(result.error), ['code'])
   }
   for (const folder of [
     outside.folder,
@@ -138,7 +308,7 @@ test('song deletion preserves the library on disk errors and rejects duplicate s
   fixture.failWith(failure)
   const result = await fixture.deleteSong(song.meta.id)
   assert.equal(result.ok, false)
-  assert.equal(!result.ok && result.error.includes('Private'), false)
+  assert.equal(!result.ok && result.error.code, 'access_denied')
   assert.equal(existsSync(song.folder), true)
   assert.equal(fixture.manager.songs[0], song)
   assert.equal((fixture.errors[0] as unknown[])[1], failure)
@@ -149,46 +319,62 @@ test('song deletion preserves the library on disk errors and rejects duplicate s
 })
 
 test('saving a song offset only persists the file without changing the shared lyrics or media', async () => {
-  const song = parseSongManifest(JSON.stringify(manifest()), folder, 0, 0, meta)
+  const song = parseSongManifest(JSON.stringify(manifest()), folder, 0, 0, { ...meta })
   const module = loadTestModule(
-    await readFile(new URL('../src/renderer/src/composables/useSongs.ts', import.meta.url), 'utf8'),
-    { vue: { ref, provide: () => undefined, onMounted: () => undefined } },
+    await readFile(
+      new URL('../src/renderer/src/composables/useSongManagement.ts', import.meta.url),
+      'utf8'
+    ),
+    {
+      vue: {
+        ref,
+        computed,
+        watch: () => {},
+        provide: () => {},
+        onMounted: () => {},
+        onScopeDispose: () => {}
+      },
+      '@shared/errors': apiErrors,
+      '@shared/youtubeUrl': youtubeUrl
+    },
     {
       window: {
         api: {
           songs: {
-            fixOffset: async (received: string, offset: number) => {
+            onDownloadProgress: () => () => {},
+            updateSong: async (received: string, patch: { fixOffsetMs: number }) => {
               assert.equal(received, song.meta.id)
-              assert.equal(offset, 100)
+              assert.equal(patch.fixOffsetMs, 100)
+              return { ok: true, value: { ...song.meta, fixOffsetMs: 100 } }
             }
           }
         }
       }
     }
   ) as {
-    useSongs(): {
+    useSongManagement(): {
       songs: ReturnType<typeof ref<Song[]>>
-      fixOffset(song: Song, offset: number): Promise<void>
+      updateSong(id: string, patch: object): Promise<unknown>
     }
   }
-  const api = module.useSongs()
+  const api = module.useSongManagement()
   api.songs.value = [song]
   const library = api.songs.value
   const playing = api.songs.value[0]
   const lines = playing.lines
-  await api.fixOffset(playing, 100)
+  await api.updateSong(playing.meta.id, { fixOffsetMs: 100 })
   assert.equal(api.songs.value, library)
   assert.equal(api.songs.value[0], playing)
   assert.equal(playing.video, song.video)
   assert.equal(playing.audio, song.audio)
   assert.equal(playing.lines, lines)
   assert.equal(playing.fixOffsetMs, 0)
-  assert.equal(playing.meta.fixOffsetMs, undefined)
+  assert.equal(playing.meta.fixOffsetMs, 100)
 })
 
 test('shared song library sends only the song ID and changes only after successful deletion', async () => {
   const source = await readFile(
-    new URL('../src/renderer/src/composables/useSongs.ts', import.meta.url),
+    new URL('../src/renderer/src/composables/useSongManagement.ts', import.meta.url),
     'utf8'
   )
   const first = parseSongManifest(JSON.stringify(manifest()), folder, 0, 0, {
@@ -197,16 +383,26 @@ test('shared song library sends only the song ID and changes only after successf
   })
   const second = { ...first, index: 1, meta: { ...first.meta, id: 'second' } }
   const ids: string[] = []
-  let response: SongDeleteResponse = { ok: false, error: 'Cannot delete' }
+  let response: apiErrors.ApiResult<Song[]> = { ok: false, error: { code: 'access_denied' } }
   const module = loadTestModule(
     source,
     {
-      vue: { ref, provide: () => {}, onMounted: () => {} }
+      vue: {
+        ref,
+        computed,
+        watch: () => {},
+        provide: () => {},
+        onMounted: () => {},
+        onScopeDispose: () => {}
+      },
+      '@shared/errors': apiErrors,
+      '@shared/youtubeUrl': youtubeUrl
     },
     {
       window: {
         api: {
           songs: {
+            onDownloadProgress: () => () => {},
             deleteSong: async (id: string) => {
               ids.push(id)
               return response
@@ -216,19 +412,19 @@ test('shared song library sends only the song ID and changes only after successf
       }
     }
   ) as {
-    useSongs: () => {
+    useSongManagement: () => {
       songs: {
         value: Song[]
       }
-      deleteSong: (song: Song) => Promise<SongDeleteResponse>
+      deleteSong: (id: string) => Promise<Song[]>
     }
   }
-  const api = module.useSongs()
+  const api = module.useSongManagement()
   api.songs.value = [first, second]
-  assert.equal((await api.deleteSong(first)).ok, false)
+  await assert.rejects(api.deleteSong(first.meta.id), { code: 'access_denied' })
   assert.equal(api.songs.value.length, 2)
-  response = { ok: true, songs: [{ ...second, index: 0 }] }
-  assert.equal((await api.deleteSong(first)).ok, true)
+  response = { ok: true, value: [{ ...second, index: 0 }] }
+  await api.deleteSong(first.meta.id)
   assert.deepEqual(ids, ['first', 'first'])
   assert.equal(api.songs.value.length, 1)
   assert.equal(api.songs.value[0].meta.id, 'second')
@@ -285,7 +481,7 @@ test('preview releases deleted-song media, ignores stale loads and preserves a v
         provide: () => {},
         onUnmounted: (callback: () => void) => cleanup.push(callback)
       },
-      './useSongs': { accessSongs: () => ({ songs }) },
+      './useSongManagement': { accessSongManagement: () => ({ songs }) },
       './useSettings': { accessSettings: () => ({ settings: ref({ musicVolume: 0.5 }) }) },
       '@renderer/utils/accessLocalFile': { accessLocalFile: (value: string) => value },
       gsap: { default: {} }
@@ -349,6 +545,190 @@ test('preview releases deleted-song media, ignores stale loads and preserves a v
   assert.equal(player.isPlaying.value, false)
   assert.equal(video.src, '')
 })
+
+for (const scenario of [
+  { name: 'audio only', audio: true, video: false, end: '5000', gap: 0, boundary: 5, duration: 5 },
+  {
+    name: 'video only with positive gap',
+    audio: false,
+    video: true,
+    end: '5000',
+    gap: 1.25,
+    boundary: 6.25,
+    duration: 6.25
+  },
+  {
+    name: 'video only with negative gap',
+    audio: false,
+    video: true,
+    end: '5000',
+    gap: -1.25,
+    boundary: 3.75,
+    duration: 3.75
+  },
+  {
+    name: 'separate audio and video',
+    audio: true,
+    video: true,
+    end: '5000',
+    gap: 1.25,
+    boundary: 5,
+    duration: 5
+  },
+  {
+    name: 'missing END',
+    audio: true,
+    video: true,
+    end: undefined,
+    gap: 1.25,
+    boundary: undefined,
+    duration: 20
+  },
+  {
+    name: 'invalid END',
+    audio: false,
+    video: true,
+    end: 'invalid',
+    gap: 0,
+    boundary: undefined,
+    duration: 30
+  },
+  {
+    name: 'END beyond media duration',
+    audio: true,
+    video: false,
+    end: '40000',
+    gap: 0,
+    boundary: undefined,
+    duration: 20
+  }
+]) {
+  test(`song playback honors END without an outro: ${scenario.name}`, async (context) => {
+    const song = parseSongFile(
+      [
+        '#TITLE:End boundary',
+        '#ARTIST:Artist',
+        '#BPM:120',
+        ...(scenario.audio ? ['#MP3:audio.mp3'] : []),
+        ...(scenario.video ? ['#VIDEO:video.mp4'] : []),
+        `#VIDEOGAP:${scenario.gap}`,
+        ...(scenario.end === undefined ? [] : [`#END:${scenario.end}`]),
+        ': 0 4 60 Lyrics',
+        'E'
+      ].join('\n'),
+      folder,
+      0,
+      250,
+      { ...meta }
+    )
+    const media: Media[] = []
+    const frames = new Map<number, () => void>()
+    const cleanup: Array<() => void> = []
+    let frameId = 0
+    class Media {
+      src = ''
+      currentTime = 0
+      duration = 20
+      readyState = 3
+      volume = 1
+      muted = false
+      pauses = 0
+      onended: (() => void) | null = null
+      constructor() {
+        media.push(this)
+        markRaw(this)
+      }
+      addEventListener(): void {}
+      removeEventListener(): void {}
+      load(): void {}
+      removeAttribute(name: string): void {
+        if (name === 'src') this.src = ''
+      }
+      pause(): void {
+        this.pauses++
+      }
+      play(): Promise<void> {
+        return Promise.resolve()
+      }
+    }
+    const module = loadTestModule(
+      await readFile(
+        new URL('../src/renderer/src/composables/useSongPlayer.ts', import.meta.url),
+        'utf8'
+      ),
+      {
+        vue: {
+          ref,
+          computed,
+          watch,
+          provide: () => {},
+          onUnmounted: (callback: () => void) => cleanup.push(callback)
+        },
+        './useSongManagement': { accessSongManagement: () => ({ songs: ref([song]) }) },
+        './useSettings': { accessSettings: () => ({ settings: ref({ musicVolume: 0.5 }) }) },
+        '@renderer/utils/accessLocalFile': { accessLocalFile: (value: string) => value }
+      },
+      {
+        Audio: Media,
+        console: { log: () => {} },
+        requestAnimationFrame: (callback: () => void) => {
+          frames.set(++frameId, callback)
+          return frameId
+        },
+        cancelAnimationFrame: (id: number) => frames.delete(id)
+      }
+    ) as {
+      useSongPlayer: () => {
+        video: { value: Media | null }
+        isLoaded: { value: boolean }
+        isPlaying: { value: boolean }
+        pausedByUser: { value: boolean }
+        ended: { value: boolean }
+        duration: { value: number }
+        play(): Promise<void>
+        pause(): void
+      }
+    }
+    const scope = effectScope()
+    const player = scope.run(() => module.useSongPlayer())!
+    context.after(() => {
+      player.pause()
+      cleanup.forEach((release) => release())
+      scope.stop()
+    })
+    const video = new Media()
+    video.duration = 30
+    player.video.value = video
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.equal(player.isLoaded.value, true)
+    assert.equal(player.duration.value, scenario.duration)
+    const master = scenario.audio ? media[0] : video
+    const advance = (time: number): void => {
+      master.currentTime = time
+      const callbacks = Array.from(frames.values())
+      frames.clear()
+      callbacks.forEach((callback) => callback())
+    }
+    await player.play()
+    advance((scenario.boundary ?? 10) - 0.01)
+    assert.equal(player.ended.value, false)
+    assert.equal(player.isPlaying.value, true)
+    if (scenario.boundary !== undefined) {
+      advance(scenario.boundary)
+      assert.equal(player.ended.value, true)
+      assert.equal(player.isPlaying.value, false)
+      assert.equal(player.pausedByUser.value, false)
+      assert.equal(frames.size, 0)
+      if (scenario.audio) assert.ok(media[0].pauses > 0)
+      if (scenario.video) assert.ok(video.pauses > 0)
+    } else {
+      advance(15)
+      assert.equal(player.ended.value, false)
+      master.onended?.()
+      assert.equal(player.ended.value, true)
+    }
+  })
+}
 
 test('video playback keeps Chromium frame pacing and GPU synchronization enabled', async () => {
   const source = await readFile(new URL('../src/main/index.ts', import.meta.url), 'utf8')

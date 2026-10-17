@@ -3,11 +3,16 @@ import { test } from 'node:test'
 import { readFile } from 'node:fs/promises'
 import { loadTestModule } from './helpers.ts'
 import { Effect } from 'effect'
-import { ref } from 'vue'
-import type { ImportCandidate } from '../src/shared/types.ts'
-import { searchSources } from '../src/renderer/src/utils/searchSources.ts'
+import { computed, ref } from 'vue'
+import * as youtubeUrl from '../src/shared/youtubeUrl.ts'
+import type { ImportCandidate, Song } from '../src/shared/types.ts'
+import type { AppAPI } from '../src/shared/api.ts'
+import * as songTypes from '../src/shared/types.ts'
+import { folder, manifest, meta } from './fixtures.ts'
+import { parseSongManifest } from '../src/main/song-management/formats/manifest.ts'
 import { IPC_CHANNELS } from '../src/shared/ipc.ts'
 import * as downloadErrors from '../src/shared/errors.ts'
+import { EventEmitter } from 'node:events'
 import type { SongImportRequest } from '../src/shared/types.ts'
 
 test('download error messages use fixed explanations and never raw diagnostic text', () => {
@@ -105,20 +110,20 @@ test('YouTube video download HTTP 403 is treated as rate limited, including stde
 })
 
 test('download IPC logs full errors but sends only known codes, with generic unknown failures', async () => {
-  const source = await readFile(
-    new URL('../src/main/ipc/downloaderManager.ts', import.meta.url),
-    'utf8'
-  )
+  const source = await readFile(new URL('../src/main/utils/ipcHandle.ts', import.meta.url), 'utf8')
   const handlers = new Map<
     string,
-    (event: object, request: unknown) => Promise<downloadErrors.SongDownloadResponse>
+    (
+      event: object,
+      request: unknown
+    ) => Promise<downloadErrors.ApiResult<{ dirName: string; songDir: string }>>
   >()
   const logs: unknown[][] = []
   let failure: unknown = new downloadErrors.DownloadError(
     'captions_unavailable',
     'Private diagnostic details'
   )
-  const manager = loadTestModule(
+  const { handleApi } = loadTestModule(
     source,
     {
       electron: {
@@ -129,24 +134,17 @@ test('download IPC logs full errors but sends only known codes, with generic unk
           ) => handlers.set(name, handler)
         }
       },
-      '../../shared/ipc': { IPC_CHANNELS },
-      '../../shared/errors': downloadErrors,
-      '../ultrastar-download/usdbDownloader': { searchUsdb: () => {} },
-      './settings': { basePathForDownload: 'fixture-folder' },
-      '../song-import': {
-        importSong: async () => {
-          if (failure) throw failure
-          return { dirName: 'youtube-video', songDir: 'fixture-folder/youtube-video' }
-        }
-      },
-      '../song-import/youtube': { inspectYoutube: () => {}, searchYoutube: () => {} }
+      '../../shared/errors': downloadErrors
     },
     { console: { error: (...args: unknown[]) => logs.push(args) } }
-  ).downloaderManager as {
-    defineIpcHandles: () => Promise<void>
+  ) as {
+    handleApi: (channel: string, handler: () => unknown) => void
   }
-  await manager.defineIpcHandles()
-  const download = handlers.get(IPC_CHANNELS.DOWNLOADER.DOWNLOAD)!
+  handleApi(IPC_CHANNELS.SONGS.DOWNLOAD, async () => {
+    if (failure) throw failure
+    return { dirName: 'youtube-video', songDir: 'fixture-folder/youtube-video' }
+  })
+  const download = handlers.get(IPC_CHANNELS.SONGS.DOWNLOAD)!
   const known = await download({}, {})
   assert.equal(known.ok, false)
   assert.equal(!known.ok && known.error.code, 'captions_unavailable')
@@ -190,42 +188,140 @@ test('download IPC logs full errors but sends only known codes, with generic unk
   failure = null
   const success = await download({}, {})
   assert.equal(success.ok, true)
-  assert.equal(success.ok && success.result.dirName, 'youtube-video')
+  assert.equal(success.ok && success.value.dirName, 'youtube-video')
+})
+
+test('preload exposes only the unified song API and subscriptions release their listeners', async () => {
+  const source = await readFile(new URL('../src/preload/index.ts', import.meta.url), 'utf8')
+  const exposed: Record<string, unknown> = {}
+  const calls: unknown[][] = []
+  const listeners = new Map<string, (...args: unknown[]) => void>()
+  loadTestModule(
+    source,
+    {
+      electron: {
+        contextBridge: {
+          exposeInMainWorld: (name: string, value: unknown) => {
+            exposed[name] = value
+          }
+        },
+        ipcRenderer: {
+          invoke: async (...args: unknown[]) => {
+            calls.push(args)
+            return { ok: true, value: [] }
+          },
+          on: (channel: string, listener: (...args: unknown[]) => void) =>
+            listeners.set(channel, listener),
+          removeListener: (channel: string) => listeners.delete(channel)
+        }
+      },
+      '@electron-toolkit/preload': { electronAPI: {} },
+      '../shared/ipc': { IPC_CHANNELS }
+    },
+    { process: { contextIsolated: true } }
+  )
+  const api = exposed.api as AppAPI
+  assert.equal(Object.hasOwn(api, 'downloader'), false)
+  assert.deepEqual(Object.keys(api.songs), [
+    'getSongs',
+    'searchSongs',
+    'downloadSong',
+    'deleteSong',
+    'updateSong',
+    'onDownloadProgress'
+  ])
+  await api.songs.searchSongs('Artist - Song', { providers: ['local'] })
+  assert.deepEqual(calls[0], [IPC_CHANNELS.SONGS.SEARCH, 'Artist - Song', { providers: ['local'] }])
+  let progress = 0
+  const unsubscribe = api.songs.onDownloadProgress((_candidate: unknown, value: number) => {
+    progress = value
+  })
+  listeners.get(IPC_CHANNELS.SONGS.PROGRESS)!({}, {}, 0.5)
+  assert.equal(progress, 0.5)
+  unsubscribe()
+  assert.equal(listeners.size, 0)
+})
+
+test('updater checks once concurrently, emits availability and only installs downloaded updates', async () => {
+  const source = await readFile(new URL('../src/main/updater/index.ts', import.meta.url), 'utf8')
+  const info = { version: '2.0.0' }
+  let checks = 0
+  let installs = 0
+  const updater = Object.assign(new EventEmitter(), {
+    checkForUpdates: async () => {
+      checks++
+      await Promise.resolve()
+      updater.emit('update-available', info)
+      return { updateInfo: info }
+    },
+    quitAndInstall: () => {
+      installs++
+    }
+  })
+  const module = loadTestModule(
+    source,
+    {
+      'electron-updater': { autoUpdater: updater },
+      '@electron-toolkit/utils': { is: { dev: false } },
+      '../../shared/errors': downloadErrors
+    },
+    { console: { error: () => {} } }
+  ) as {
+    initializeUpdater(): void
+    checkForUpdates(): Promise<unknown>
+    installUpdate(): void
+    updaterEvents: EventEmitter
+  }
+  const available: unknown[] = []
+  const failures: unknown[] = []
+  module.updaterEvents.on('available', (value) => available.push(value))
+  module.updaterEvents.on('failed', (value) => failures.push(value))
+  module.initializeUpdater()
+  module.initializeUpdater()
+  assert.throws(() => module.installUpdate(), { code: 'update_not_ready' })
+  await Promise.all([module.checkForUpdates(), module.checkForUpdates()])
+  assert.equal(checks, 1)
+  assert.deepEqual(available, [info])
+  updater.emit('error', new Error('Private update path'))
+  assert.equal(JSON.stringify(failures), '[{"code":"update_failed"}]')
+  updater.emit('update-downloaded', info)
+  assert.equal(await module.checkForUpdates(), info)
+  assert.equal(checks, 1)
+  module.installUpdate()
+  assert.equal(installs, 1)
 })
 
 test('download UI displays sanitized messages, preserves retries and logs unexpected failures', async () => {
   const source = await readFile(
-    new URL('../src/renderer/src/composables/useDownloader.ts', import.meta.url),
+    new URL('../src/renderer/src/composables/useSongManagement.ts', import.meta.url),
     'utf8'
   )
   const logs: unknown[][] = []
-  let response: downloadErrors.SongDownloadResponse = {
+  let response: downloadErrors.ApiResult<Song> = {
     ok: false,
     error: { code: 'captions_unavailable' }
   }
   let failure: unknown
-  let refreshed = 0
   const downloader = loadTestModule(
     source,
     {
-      vue: { ref },
-      '@shared/errors': downloadErrors,
-      './useSongs': {
-        accessSongs: () => ({
-          songs: ref([]),
-          refresh: async () => {
-            refreshed++
-          }
-        })
+      vue: {
+        computed,
+        ref,
+        watch: () => {},
+        provide: () => {},
+        onMounted: () => {},
+        onScopeDispose: () => {}
       },
-      '../utils/searchSources': { searchSources }
+      '@shared/errors': downloadErrors,
+      '@shared/youtubeUrl': youtubeUrl
     },
     {
       window: {
         api: {
-          downloader: {
-            onProgress: () => {},
-            download: async () => {
+          songs: {
+            onDownloadProgress: () => () => {},
+            downloadSong: async () => {
               if (failure) throw failure
               return response
             }
@@ -234,15 +330,15 @@ test('download UI displays sanitized messages, preserves retries and logs unexpe
       },
       console: { error: (...args: unknown[]) => logs.push(args), warn: () => {} }
     }
-  ).useDownloader as () => {
+  ).useSongManagement as () => {
     downloads: {
       value: {
         status: string
-        error?: string
+        error?: downloadErrors.ApiFailure
         progress: number
       }[]
     }
-    importSong: (request: SongImportRequest) => Promise<unknown>
+    downloadSong: (request: SongImportRequest) => Promise<unknown>
   }
   const instance = downloader()
   const candidate: Extract<
@@ -259,28 +355,56 @@ test('download UI displays sanitized messages, preserves retries and logs unexpe
     tracks: []
   }
   const request = { candidate, captionTrackId: 'manual:en', title: 'Song', artist: 'Artist' }
-  assert.equal(await instance.importSong(request), null)
-  assert.equal(
-    instance.downloads.value[0].error,
-    'The selected captions are unavailable. Please choose another track.'
-  )
+  await assert.rejects(instance.downloadSong(request), { code: 'captions_unavailable' })
+  assert.equal(instance.downloads.value[0].error?.code, 'captions_unavailable')
   response = { ok: false, error: { code: 'rate_limited' } }
-  assert.equal(await instance.importSong(request), null)
-  assert.equal(
-    instance.downloads.value[0].error,
-    'YouTube is limiting requests. Please try again later.'
-  )
+  await assert.rejects(instance.downloadSong(request), { code: 'rate_limited' })
+  assert.equal(instance.downloads.value[0].error?.code, 'rate_limited')
   failure = new Error('Raw Electron handler text with internal file paths')
-  assert.equal(await instance.importSong(request), null)
-  assert.equal(instance.downloads.value[0].error, 'Download failed. Please try again.')
+  await assert.rejects(instance.downloadSong(request), { code: 'unknown' })
+  assert.equal(instance.downloads.value[0].error?.code, 'unknown')
   assert.equal(logs.at(-1)?.[1], failure)
   failure = null
   response = {
     ok: true,
-    result: { dirName: 'youtube-video', songDir: 'fixture-folder/youtube-video' }
+    value: parseSongManifest(JSON.stringify(manifest()), folder, 0, 0, { ...meta, id: 'imported' })
   }
-  await instance.importSong(request)
+  await instance.downloadSong(request)
   assert.equal(instance.downloads.value[0].status, 'completed')
   assert.equal(instance.downloads.value[0].error, undefined)
-  assert.equal(refreshed, 1)
+})
+
+test('settings validate persisted JSON and patches without changing the cache after failed writes', async () => {
+  let persisted = JSON.stringify({ musicVolume: 0.6 })
+  let failWrite = false
+  const service = loadTestModule(
+    await readFile(new URL('../src/main/settings/index.ts', import.meta.url), 'utf8'),
+    {
+      electron: { app: { getPath: () => 'fixture-data' } },
+      'fs/promises': {
+        readFile: async () => persisted,
+        writeFile: async (_filename: string, value: string) => {
+          if (failWrite) throw Object.assign(new Error('private path'), { code: 'EACCES' })
+          persisted = value
+        },
+        mkdir: async () => {}
+      },
+      '../../shared/errors': downloadErrors,
+      '../../shared/types': songTypes
+    }
+  ).settingsManager as typeof import('../src/main/settings/index.ts').settingsManager
+  await service.init()
+  assert.equal(service.settings.musicVolume, 0.6)
+  assert.equal(service.settings.sfxVolume, 0.8)
+  await service.update({ youtubeSignInDismissed: true })
+  assert.equal(JSON.parse(persisted).youtubeSignInDismissed, true)
+  const cached = service.settings
+  await assert.rejects(service.update({ musicVolume: 2 }), { code: 'invalid_request' })
+  assert.equal(service.settings, cached)
+  failWrite = true
+  await assert.rejects(service.update({ sfxVolume: 0.2 }), { code: 'EACCES' })
+  assert.equal(service.settings, cached)
+  persisted = JSON.stringify({ musicVolume: 'invalid' })
+  await assert.rejects(service.refresh())
+  assert.equal(service.settings, cached)
 })

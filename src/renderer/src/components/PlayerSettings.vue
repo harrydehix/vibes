@@ -8,10 +8,12 @@ import gsap from 'gsap'
 import { useSound } from '@renderer/composables/useSound'
 import type { YoutubeAuthStatus } from '@shared/types'
 import YoutubeAuthPopup from './YoutubeAuthPopup.vue'
+import { useYoutubeAuth } from '@renderer/composables/useYoutubeAuth'
 
 const { settingsOpened } = useSettingsView()
 const { settings, update } = accessSettings()
 const youtubeAuthOpened = ref(false)
+const youtubeAuth = useYoutubeAuth()
 const youtubeStatus = ref<YoutubeAuthStatus | null>(null)
 const youtubeError = ref<string | null>(null)
 const youtubeBusy = ref(false)
@@ -36,12 +38,12 @@ let ctx: gsap.Context
 let tl: gsap.core.Timeline
 
 onMounted(() => {
-  unsubscribeYoutube = window.api.youtubeAuth.onChanged((status) => {
+  unsubscribeYoutube = youtubeAuth.onChanged((status) => {
     youtubeChanges++
     youtubeStatus.value = status
   })
   const version = youtubeChanges
-  void window.api.youtubeAuth
+  void youtubeAuth
     .status()
     .then((status) => {
       if (active && youtubeChanges === version) youtubeStatus.value = status
@@ -68,8 +70,8 @@ async function signOutYoutube(): Promise<void> {
   youtubeError.value = null
   try {
     if (settings.value) settings.value.youtubeSignInDismissed = true
-    await window.api.settings.update({ youtubeSignInDismissed: true })
-    const status = await window.api.youtubeAuth.signOut()
+    if (!(await update({ youtubeSignInDismissed: true }))) return
+    const status = await youtubeAuth.signOut()
     if (active) youtubeStatus.value = status
   } catch {
     if (active) youtubeError.value = 'Could not sign out of YouTube.'
